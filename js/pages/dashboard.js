@@ -41,6 +41,9 @@ async function renderDashboard() {
             <button class="btn btn-ghost btn-sm" onclick="navigateTo('cobrancas')">
                 💲 Cobrar Agora
             </button>
+            <button class="btn btn-ghost btn-sm" onclick="navigateTo('relatorios')" style="grid-column: span 2;">
+                📊 Ver Relatórios
+            </button>
         </div>
 
         <!-- Today's collections -->

@@ -73,5 +73,27 @@ async function carregarDadosDemo() {
     p6[0].dataVencimento = hoje;
     await addVenda({clienteId:5, data:hoje, descricao:'Panela de Pressão 7L', itens:[{produtoId:7, quantidade:1}], valorTotal:170, tipo:'parcelado', numParcelas:5, taxaJuros:0, valorEntrada:0}, p6);
 
+    // === HISTORICAL DATA (July) for reports comparison ===
+    const julho = '2026-07';
+    
+    // Insert vendas de julho directly (bypass addVenda to avoid stock issues)
+    await db.vendas.add({clienteId:1, data:`${julho}-10`, descricao:'Jogo de Toalhas', itens:[], valorTotal:100, tipo:'vista', numParcelas:1, taxaJuros:0, valorEntrada:0, status:'quitada', criadoEm:`${julho}-10T08:00:00.000Z`});
+    await db.vendas.add({clienteId:4, data:`${julho}-18`, descricao:'Ferro de Passar', itens:[], valorTotal:110, tipo:'vista', numParcelas:1, taxaJuros:0, valorEntrada:0, status:'quitada', criadoEm:`${julho}-18T08:00:00.000Z`});
+    await db.vendas.add({clienteId:3, data:`${julho}-05`, descricao:'Jogo de Cama', itens:[], valorTotal:160, tipo:'parcelado', numParcelas:3, taxaJuros:0, valorEntrada:0, status:'aberta', criadoEm:`${julho}-05T08:00:00.000Z`});
+
+    // Parcelas de julho (vendaId will be 7,8,9 since previous were 1-6)
+    const vendaIdBase = 6; // last venda from agosto block
+    await db.parcelas.add({vendaId:vendaIdBase+1, clienteId:1, numero:1, valor:100, dataVencimento:`${julho}-15`, status:'pago', dataPagamento:`${julho}-15`, formaPagamento:'dinheiro'});
+    await db.parcelas.add({vendaId:vendaIdBase+2, clienteId:4, numero:1, valor:110, dataVencimento:`${julho}-20`, status:'pago', dataPagamento:`${julho}-20`, formaPagamento:'pix'});
+    await db.parcelas.add({vendaId:vendaIdBase+3, clienteId:3, numero:1, valor:53.33, dataVencimento:`${julho}-10`, status:'pago', dataPagamento:`${julho}-10`, formaPagamento:'dinheiro'});
+    await db.parcelas.add({vendaId:vendaIdBase+3, clienteId:3, numero:2, valor:53.33, dataVencimento:`${julho}-25`, status:'pago', dataPagamento:`${julho}-25`, formaPagamento:'pix'});
+    await db.parcelas.add({vendaId:vendaIdBase+3, clienteId:3, numero:3, valor:53.34, dataVencimento:'2026-08-25', status:'pendente'});
+
+    // Pagamentos de julho
+    await db.pagamentos.add({parcelaId:200, vendaId:vendaIdBase+1, clienteId:1, valor:100, data:`${julho}-15T10:00:00.000Z`, forma:'dinheiro'});
+    await db.pagamentos.add({parcelaId:201, vendaId:vendaIdBase+2, clienteId:4, valor:110, data:`${julho}-20T14:00:00.000Z`, forma:'pix'});
+    await db.pagamentos.add({parcelaId:202, vendaId:vendaIdBase+3, clienteId:3, valor:53.33, data:`${julho}-10T09:00:00.000Z`, forma:'dinheiro'});
+    await db.pagamentos.add({parcelaId:203, vendaId:vendaIdBase+3, clienteId:3, valor:53.33, data:`${julho}-25T11:00:00.000Z`, forma:'pix'});
+
     console.log('VendIX: Demo data loaded');
 }

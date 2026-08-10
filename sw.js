@@ -16,6 +16,7 @@ const ASSETS = [
     './js/pages/clientes.js',
     './js/pages/vendas.js',
     './js/pages/cobrancas.js',
+    './js/pages/relatorios.js',
     './js/pages/config.js',
     './js/backup.js',
     './js/demo-data.js',

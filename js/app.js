@@ -9,6 +9,7 @@ const pages = {
     clientes: { title: 'Clientes', render: renderClientes },
     vendas: { title: 'Vendas', render: renderVendas },
     cobrancas: { title: 'Cobranças', render: renderCobrancas },
+    relatorios: { title: 'Relatórios', render: renderRelatorios },
     config: { title: 'Configurações', render: renderConfig }
 };
 
