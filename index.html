@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#0a0a1a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>VendIX</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" href="icons/icon-192.png">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="app-header">
+        <div class="header-left">
+            <span class="header-logo">V</span>
+            <h1 id="page-title">VendIX</h1>
+        </div>
+        <button class="header-config-btn" onclick="navigateTo('config')" aria-label="Configurações">⚙️</button>
+    </header>
+
+    <!-- Main content area -->
+    <main id="app-content"></main>
+
+    <!-- Bottom navigation -->
+    <nav class="bottom-nav">
+        <button class="nav-btn active" data-page="dashboard">
+            <span class="nav-icon">🏠</span>
+            <span class="nav-label">Início</span>
+        </button>
+        <button class="nav-btn" data-page="produtos">
+            <span class="nav-icon">📦</span>
+            <span class="nav-label">Produtos</span>
+        </button>
+        <button class="nav-btn" data-page="clientes">
+            <span class="nav-icon">👤</span>
+            <span class="nav-label">Clientes</span>
+        </button>
+        <button class="nav-btn" data-page="vendas">
+            <span class="nav-icon">🛒</span>
+            <span class="nav-label">Vendas</span>
+        </button>
+        <button class="nav-btn" data-page="cobrancas">
+            <span class="nav-icon">💲</span>
+            <span class="nav-label">Cobrar</span>
+        </button>
+    </nav>
+
+    <!-- Modal -->
+    <div id="modal-overlay" class="modal-overlay hidden">
+        <div class="modal-content" id="modal-content"></div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="toast hidden"></div>
+
+    <!-- Install prompt -->
+    <div id="install-banner" class="install-banner hidden">
+        <span>📲 Instalar VendIX no celular</span>
+        <button id="install-btn" class="btn btn-accent btn-sm">Instalar</button>
+        <button id="install-dismiss" class="install-close">✕</button>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.min.js"></script>
+    <script src="js/db.js"></script>
+    <script src="js/utils.js"></script>
+    <script src="js/pages/dashboard.js"></script>
+    <script src="js/pages/produtos.js"></script>
+    <script src="js/pages/clientes.js"></script>
+    <script src="js/pages/vendas.js"></script>
+    <script src="js/pages/cobrancas.js"></script>
+    <script src="js/pages/config.js"></script>
+    <script src="js/backup.js"></script>
+    <script src="js/demo-data.js"></script>
+    <script src="js/app.js"></script>
+
+    <script>
+        // Service Worker
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('./sw.js');
+        }
+
+        // PWA Install prompt
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            document.getElementById('install-banner').classList.remove('hidden');
+        });
+
+        document.getElementById('install-btn')?.addEventListener('click', async () => {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                await deferredPrompt.userChoice;
+                deferredPrompt = null;
+                document.getElementById('install-banner').classList.add('hidden');
+            }
+        });
+
+        document.getElementById('install-dismiss')?.addEventListener('click', () => {
+            document.getElementById('install-banner').classList.add('hidden');
+        });
+    </script>
+</body>
+</html>

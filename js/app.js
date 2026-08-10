@@ -1,0 +1,55 @@
+/* ============================================
+   VendIX - App Router & Navigation
+   ============================================ */
+
+// Page registry
+const pages = {
+    dashboard: { title: 'VendIX', render: renderDashboard },
+    produtos: { title: 'Produtos', render: renderProdutos },
+    clientes: { title: 'Clientes', render: renderClientes },
+    vendas: { title: 'Vendas', render: renderVendas },
+    cobrancas: { title: 'Cobranças', render: renderCobrancas },
+    config: { title: 'Configurações', render: renderConfig }
+};
+
+let currentPage = 'dashboard';
+
+// Navigate to page
+function navigateTo(page) {
+    if (!pages[page]) return;
+
+    currentPage = page;
+
+    // Update nav buttons
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.page === page);
+    });
+
+    // Update title (use config name for dashboard)
+    const title = page === 'dashboard' ? configVal('nomeNegocio') : pages[page].title;
+    document.getElementById('page-title').textContent = title;
+
+    // Render page
+    pages[page].render();
+}
+
+// Init app
+document.addEventListener('DOMContentLoaded', async () => {
+    // Load demo data if first time
+    await carregarDadosDemo();
+
+    // Nav button clicks
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            navigateTo(btn.dataset.page);
+        });
+    });
+
+    // Start on dashboard
+    navigateTo('dashboard');
+
+    // Check backup reminder after short delay
+    setTimeout(() => {
+        mostrarBackupReminder();
+    }, 2000);
+});
