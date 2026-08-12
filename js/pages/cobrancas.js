@@ -83,10 +83,52 @@ async function renderTabCobranca(tab, items) {
         return;
     }
 
-    // Sort: atrasadas first (by days overdue), then by date
-    items.sort((a, b) => a.dataVencimento.localeCompare(b.dataVencimento));
+    // Split into atrasadas vs hoje (only for tab 'hoje')
+    const atrasadas = items.filter(p => p.dataVencimento < hoje);
+    const doHoje = items.filter(p => p.dataVencimento >= hoje);
 
-    // Group by client and city
+    // Sort: atrasadas first (oldest first), then by date
+    atrasadas.sort((a, b) => a.dataVencimento.localeCompare(b.dataVencimento));
+    doHoje.sort((a, b) => a.dataVencimento.localeCompare(b.dataVencimento));
+
+    let html = '';
+
+    // Total
+    const totalValor = items.reduce((s, p) => s + p.valor - (p.valorPago || 0), 0);
+    html += `
+        <div class="card" style="text-align: center; margin-bottom: 16px;">
+            <div style="font-size: 12px; color: var(--text-secondary);">TOTAL A COBRAR</div>
+            <div style="font-size: 26px; font-weight: 800; color: var(--accent);">${formatMoney(totalValor)}</div>
+            <div style="font-size: 12px; color: var(--text-muted);">${items.length} parcela${items.length > 1 ? 's' : ''}</div>
+        </div>
+    `;
+
+    // Render atrasadas section
+    if (atrasadas.length > 0 && tab === 'hoje') {
+        html += `<div class="section-title" style="color: var(--danger);">🔴 Atrasadas (${atrasadas.length})</div>`;
+        html += await renderCobrancaCards(atrasadas, hoje);
+    }
+
+    // Render hoje section
+    if (doHoje.length > 0 && tab === 'hoje') {
+        html += `<div class="section-title" style="color: var(--warning);">🟡 Vence Hoje (${doHoje.length})</div>`;
+        html += await renderCobrancaCards(doHoje, hoje);
+    }
+
+    // For other tabs, render all together
+    if (tab !== 'hoje') {
+        html += await renderCobrancaCards(items, hoje);
+    }
+
+    // Route suggestion
+    const allItems = tab === 'hoje' ? [...atrasadas, ...doHoje] : items;
+    html += await renderRotaSugerida(allItems);
+
+    container.innerHTML = html;
+}
+
+async function renderCobrancaCards(items, hoje) {
+    // Group by client
     const byClient = {};
     for (const p of items) {
         const cliente = await getCliente(p.clienteId);
@@ -97,21 +139,10 @@ async function renderTabCobranca(tab, items) {
         byClient[key].parcelas.push(p);
     }
 
-    // Total
-    const totalValor = items.reduce((s, p) => s + p.valor, 0);
-
-    let html = `
-        <div class="card" style="text-align: center; margin-bottom: 16px;">
-            <div style="font-size: 12px; color: var(--text-secondary);">TOTAL A COBRAR</div>
-            <div style="font-size: 26px; font-weight: 800; color: var(--accent);">${formatMoney(totalValor)}</div>
-            <div style="font-size: 12px; color: var(--text-muted);">${items.length} parcela${items.length > 1 ? 's' : ''} • ${Object.keys(byClient).length} cliente${Object.keys(byClient).length > 1 ? 's' : ''}</div>
-        </div>
-    `;
-
-    // Render by client
+    let html = '';
     for (const key of Object.keys(byClient)) {
         const { cliente, parcelas } = byClient[key];
-        const totalCliente = parcelas.reduce((s, p) => s + p.valor, 0);
+        const totalCliente = parcelas.reduce((s, p) => s + p.valor - (p.valorPago || 0), 0);
         const hasAtrasado = parcelas.some(p => p.dataVencimento < hoje);
 
         html += `
@@ -139,13 +170,15 @@ async function renderTabCobranca(tab, items) {
                     ${parcelas.map(p => {
                         const isAtrasado = p.dataVencimento < hoje;
                         const diasAtraso = isAtrasado ? Math.abs(daysDiff(p.dataVencimento)) : 0;
+                        const restante = p.valor - (p.valorPago || 0);
                         return `
                             <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 0;">
                                 <div style="font-size: 13px;">
                                     ${isAtrasado ? '🔴' : '🟡'} Parcela ${p.numero} • ${formatDate(p.dataVencimento)}
                                     ${isAtrasado ? `<span style="color: var(--danger); font-size: 11px;"> (${diasAtraso}d atraso)</span>` : ''}
+                                    ${p.status === 'parcial' ? `<span style="color: var(--warning); font-size: 11px;"> (parcial)</span>` : ''}
                                 </div>
-                                <div style="font-weight: 700; font-size: 14px;">${formatMoney(p.valor)}</div>
+                                <div style="font-weight: 700; font-size: 14px;">${formatMoney(restante)}</div>
                             </div>
                         `;
                     }).join('')}
@@ -162,17 +195,27 @@ async function renderTabCobranca(tab, items) {
             </div>
         `;
     }
+    return html;
+}
 
-    // Route suggestion
+async function renderRotaSugerida(items) {
+    if (configVal('mostrarRotaMaps') === false) return '';
+
+    const byClient = {};
+    for (const p of items) {
+        if (!byClient[p.clienteId]) {
+            byClient[p.clienteId] = await getCliente(p.clienteId);
+        }
+    }
+
     const cidades = {};
     const enderecos = [];
     for (const key of Object.keys(byClient)) {
-        const c = byClient[key].cliente;
+        const c = byClient[key];
         if (c && c.bairro) {
             const zona = c.bairro + (c.cidade ? ', ' + c.cidade : '');
             cidades[zona] = (cidades[zona] || 0) + 1;
         }
-        // Collect addresses for Google Maps
         if (c) {
             let addr = '';
             if (c.endereco) addr += c.endereco + ', ';
@@ -182,40 +225,36 @@ async function renderTabCobranca(tab, items) {
         }
     }
 
-    if (Object.keys(cidades).length > 0 && configVal('mostrarRotaMaps') !== false) {
-        const rotaSugerida = Object.entries(cidades)
-            .sort((a, b) => b[1] - a[1])
-            .map(([zona, count]) => `${zona} (${count})`)
-            .join(' → ');
+    if (Object.keys(cidades).length === 0) return '';
 
-        // Build Google Maps directions link (driving mode)
-        let mapsLink = '';
-        if (enderecos.length > 0) {
-            // Classic format: /maps/dir/A/B/C - works better in browser for rendering the route
-            const waypoints = enderecos.map(e => encodeURIComponent(e)).join('/');
-            mapsLink = `https://www.google.com/maps/dir/${waypoints}`;
-        }
+    const rotaSugerida = Object.entries(cidades)
+        .sort((a, b) => b[1] - a[1])
+        .map(([zona, count]) => `${zona} (${count})`)
+        .join(' → ');
 
-        html += `
-            <div class="section-title mt-16">🗺️ Sugestão de Rota</div>
-            <div class="card">
-                <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 4px;">
-                    Agrupar visitas por bairro:
-                </div>
-                <div style="font-size: 14px; font-weight: 600; margin-bottom: 12px;">
-                    ${rotaSugerida}
-                </div>
-                ${mapsLink ? `
-                    <a href="${mapsLink}" target="_blank" class="btn btn-ghost btn-sm" style="text-decoration: none; gap: 8px;">
-                        <svg viewBox="0 0 92.3 132.3" width="18" height="26" style="flex-shrink:0;"><path fill="#1a73e8" d="M60.2 2.2C55.8.8 51 0 46.1 0 32 0 19.3 6.4 10.8 16.5l21.8 18.3L60.2 2.2z"/><path fill="#ea4335" d="M10.8 16.5C4.1 24.5 0 34.9 0 46.1c0 8.7 1.7 15.7 4.6 22l28-33.3-21.8-18.3z"/><path fill="#4285f4" d="M46.2 28.5c9.8 0 17.7 7.9 17.7 17.7 0 4.3-1.6 8.3-4.2 11.4l22.7-27C76 20.7 66.3 13.4 55.1 10.6L32.6 34.8c3.6-3.8 8.6-6.3 13.6-6.3z"/><path fill="#fbbc04" d="M46.2 63.8c-9.8 0-17.7-7.9-17.7-17.7 0-4.3 1.6-8.3 4.2-11.4L4.6 68.1c5.5 12 14 22.2 22.4 32.6l32.6-38.6c-3.5 1.1-7.4 1.7-13.4 1.7z"/><path fill="#34a853" d="M59.6 57.7L27 100.7c7.5 9.2 15 18.3 17.2 22.3 2.2 3.9 2.1 6.2 2.1 9.3l28-33.3c-5.8-9.4-12.6-20.1-14.7-41.3z"/></svg>
-                        Abrir Rota
-                    </a>
-                ` : ''}
-            </div>
-        `;
+    let mapsLink = '';
+    if (enderecos.length > 0) {
+        const waypoints = enderecos.map(e => encodeURIComponent(e)).join('/');
+        mapsLink = `https://www.google.com/maps/dir/${waypoints}`;
     }
 
-    container.innerHTML = html;
+    return `
+        <div class="section-title mt-16">🗺️ Sugestão de Rota</div>
+        <div class="card">
+            <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 4px;">
+                Agrupar visitas por bairro:
+            </div>
+            <div style="font-size: 14px; font-weight: 600; margin-bottom: 12px;">
+                ${rotaSugerida}
+            </div>
+            ${mapsLink ? `
+                <a href="${mapsLink}" target="_blank" class="btn btn-ghost btn-sm" style="text-decoration: none; gap: 8px;">
+                    <svg viewBox="0 0 92.3 132.3" width="18" height="26" style="flex-shrink:0;"><path fill="#1a73e8" d="M60.2 2.2C55.8.8 51 0 46.1 0 32 0 19.3 6.4 10.8 16.5l21.8 18.3L60.2 2.2z"/><path fill="#ea4335" d="M10.8 16.5C4.1 24.5 0 34.9 0 46.1c0 8.7 1.7 15.7 4.6 22l28-33.3-21.8-18.3z"/><path fill="#4285f4" d="M46.2 28.5c9.8 0 17.7 7.9 17.7 17.7 0 4.3-1.6 8.3-4.2 11.4l22.7-27C76 20.7 66.3 13.4 55.1 10.6L32.6 34.8c3.6-3.8 8.6-6.3 13.6-6.3z"/><path fill="#fbbc04" d="M46.2 63.8c-9.8 0-17.7-7.9-17.7-17.7 0-4.3 1.6-8.3 4.2-11.4L4.6 68.1c5.5 12 14 22.2 22.4 32.6l32.6-38.6c-3.5 1.1-7.4 1.7-13.4 1.7z"/><path fill="#34a853" d="M59.6 57.7L27 100.7c7.5 9.2 15 18.3 17.2 22.3 2.2 3.9 2.1 6.2 2.1 9.3l28-33.3c-5.8-9.4-12.6-20.1-14.7-41.3z"/></svg>
+                    Abrir Rota
+                </a>
+            ` : ''}
+        </div>
+    `;
 }
 
 async function pagarTodasCliente(clienteId, forma) {

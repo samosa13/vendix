@@ -26,7 +26,7 @@ async function updateProduto(id, changes) {
 }
 
 async function deleteProduto(id) {
-    return await db.produtos.update(id, { ativo: 0 });
+    return await db.produtos.update(id, { ativo: 0, inativoDesde: getToday() });
 }
 
 async function getProdutos() {
@@ -51,7 +51,7 @@ async function updateCliente(id, changes) {
 }
 
 async function deleteCliente(id) {
-    return await db.clientes.update(id, { ativo: 0 });
+    return await db.clientes.update(id, { ativo: 0, inativoDesde: getToday() });
 }
 
 async function getClientes() {
@@ -332,7 +332,75 @@ async function getRecebidoMesAtual() {
 }
 
 
-// Update parcela due date
-async function editarDataParcela(parcelaId, novaData) {
-    return await db.parcelas.update(parcelaId, { dataVencimento: novaData });
+// Update parcela due date (single or cascade)
+async function editarDataParcela(parcelaId, novaData, cascata = false) {
+    const parcela = await db.parcelas.get(parcelaId);
+    if (!parcela) return;
+
+    if (!cascata) {
+        // Only move this one
+        return await db.parcelas.update(parcelaId, { dataVencimento: novaData });
+    }
+
+    // Cascade: move this and all subsequent parcelas of same venda
+    const todasParcelas = await db.parcelas.where('vendaId').equals(parcela.vendaId).toArray();
+    todasParcelas.sort((a, b) => a.numero - b.numero);
+
+    // Calculate days difference
+    const dataOriginal = new Date(parcela.dataVencimento + 'T00:00:00');
+    const dataNova = new Date(novaData + 'T00:00:00');
+    const diffDias = Math.round((dataNova - dataOriginal) / (1000 * 60 * 60 * 24));
+
+    // Move this and all subsequent pending parcelas
+    for (const p of todasParcelas) {
+        if (p.numero >= parcela.numero && p.status !== 'pago') {
+            const dataAtual = new Date(p.dataVencimento + 'T00:00:00');
+            dataAtual.setDate(dataAtual.getDate() + diffDias);
+            await db.parcelas.update(p.id, { dataVencimento: dataAtual.toISOString().split('T')[0] });
+        }
+    }
+}
+
+// Edit individual parcela value and redistribute remaining among others
+async function editarValorParcela(parcelaId, novoValor) {
+    const parcela = await db.parcelas.get(parcelaId);
+    if (!parcela) return;
+
+    const todasParcelas = await db.parcelas.where('vendaId').equals(parcela.vendaId).toArray();
+    todasParcelas.sort((a, b) => a.numero - b.numero);
+
+    // Get only pending/parcial parcelas (not paid ones)
+    const pendentes = todasParcelas.filter(p => p.status !== 'pago');
+    if (pendentes.length <= 1) {
+        // Only one pending, just update it
+        await db.parcelas.update(parcelaId, { valor: novoValor });
+        return;
+    }
+
+    // Calculate total remaining (sum of all pending parcela values minus what's already paid)
+    const totalPendente = pendentes.reduce((s, p) => s + p.valor - (p.valorPago || 0), 0);
+
+    // New value for this parcela (considering what's already paid)
+    const jaPagoEsta = parcela.valorPago || 0;
+    const novoValorTotal = novoValor + jaPagoEsta;
+    const diferenca = parcela.valor - novoValorTotal;
+
+    // Update this parcela
+    await db.parcelas.update(parcelaId, { valor: novoValorTotal });
+
+    // Redistribute the difference among the other pending parcelas
+    const outrasPendentes = pendentes.filter(p => p.id !== parcelaId);
+    if (outrasPendentes.length > 0 && diferenca !== 0) {
+        const ajustePorParcela = Math.round((diferenca / outrasPendentes.length) * 100) / 100;
+        for (let i = 0; i < outrasPendentes.length; i++) {
+            const p = outrasPendentes[i];
+            let novoVal = p.valor + ajustePorParcela;
+            // Last one absorbs rounding
+            if (i === outrasPendentes.length - 1) {
+                const somaOutras = outrasPendentes.slice(0, -1).reduce((s, op) => s + op.valor + ajustePorParcela, 0);
+                novoVal = totalPendente - novoValorTotal + jaPagoEsta - somaOutras;
+            }
+            await db.parcelas.update(p.id, { valor: Math.max(0, Math.round(novoVal * 100) / 100) });
+        }
+    }
 }

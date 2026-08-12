@@ -144,10 +144,10 @@ body {
     background: none;
     color: var(--text-muted);
     font-size: 11px;
-    padding: 8px 0;
+    padding: 6px 0;
     cursor: pointer;
     transition: all 0.2s;
-    min-width: 56px;
+    min-width: 48px;
 }
 
 .nav-btn.active {
@@ -155,15 +155,15 @@ body {
 }
 
 .nav-btn .nav-icon {
-    font-size: 22px;
-    margin-bottom: 3px;
+    font-size: 20px;
+    margin-bottom: 2px;
 }
 
 .nav-btn .nav-label {
     font-weight: 600;
-    font-size: 10px;
+    font-size: 9px;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.3px;
 }
 
 /* Cards */
@@ -765,4 +765,50 @@ textarea.form-input {
     width: 18px;
     height: 18px;
     fill: white;
+}
+
+
+/* Stock alert badge pulse */
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.15); }
+    100% { transform: scale(1); }
+}
+
+/* Inactive items */
+.item-inactive {
+    opacity: 0.5;
+}
+
+/* Collapsible section */
+.collapse-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    background: var(--bg-input);
+    border-radius: var(--radius-sm);
+    margin: 12px 0 8px 0;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.collapse-toggle .arrow {
+    transition: transform 0.2s;
+}
+
+.collapse-toggle.open .arrow {
+    transform: rotate(180deg);
+}
+
+.collapse-content.hidden {
+    display: none;
+}
+
+/* Venda quitada (paid - dimmed) */
+.list-item.quitada {
+    opacity: 0.45;
+    border-left: 3px solid var(--accent);
 }

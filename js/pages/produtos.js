@@ -4,6 +4,21 @@
 
 async function renderProdutos() {
     const produtos = await getProdutos();
+    const todosComInativos = await db.produtos.toArray();
+    const inativos = todosComInativos.filter(p => p.ativo === 0);
+
+    // Stock baixo
+    const limite = configVal('estoqueMinimoAlerta') || 3;
+    const baixos = produtos.filter(p => (p.estoque || 0) <= limite);
+
+    // Sort by category, then alphabetically within category
+    const categoriaOrder = ['panelas', 'eletro', 'cama_mesa', 'utilidades', 'outros'];
+    produtos.sort((a, b) => {
+        const catA = categoriaOrder.indexOf(a.categoria);
+        const catB = categoriaOrder.indexOf(b.categoria);
+        if (catA !== catB) return catA - catB;
+        return (a.nome || '').localeCompare(b.nome || '');
+    });
 
     const content = document.getElementById('app-content');
     content.innerHTML = `
@@ -11,6 +26,28 @@ async function renderProdutos() {
             <span class="search-icon">🔍</span>
             <input type="text" id="search-produtos" placeholder="Buscar produto..." oninput="filtrarProdutos()">
         </div>
+
+        ${baixos.length > 0 ? `
+            <div class="collapse-toggle open" onclick="toggleCollapse('stock-baixo')">
+                <span style="color: var(--danger);">⚠️ Estoque Baixo (${baixos.length})</span>
+                <span class="arrow">▼</span>
+            </div>
+            <div id="stock-baixo" class="collapse-content">
+                ${baixos.map(p => `
+                    <div class="list-item" onclick="abrirFormProduto(${p.id})" style="border-left: 4px solid var(--danger);">
+                        <div class="item-icon">${getCategoriaIcon(p.categoria)}</div>
+                        <div class="item-info">
+                            <div class="item-name">${p.nome}</div>
+                            <div class="item-detail" style="color: var(--danger);">
+                                ⚠️ Estoque: ${p.estoque || 0}
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        ` : ''}
+
+        <div class="section-title">📦 Todos os Produtos</div>
 
         <div id="produtos-list">
             ${produtos.length === 0 ? `
@@ -37,6 +74,26 @@ async function renderProdutos() {
                 </div>
             `).join('')}
         </div>
+
+        ${inativos.length > 0 ? `
+            <div class="collapse-toggle" onclick="toggleCollapse('inativos-produtos')">
+                <span>📦 Inativos (${inativos.length})</span>
+                <span class="arrow">▼</span>
+            </div>
+            <div id="inativos-produtos" class="collapse-content hidden">
+                ${inativos.map(p => `
+                    <div class="list-item item-inactive" onclick="abrirFormProduto(${p.id})">
+                        <div class="item-icon">${getCategoriaIcon(p.categoria)}</div>
+                        <div class="item-info">
+                            <div class="item-name">${p.nome}</div>
+                            <div class="item-detail" style="color: var(--text-muted);">
+                                Inativo ${p.inativoDesde ? 'desde ' + formatDate(p.inativoDesde) : ''}
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        ` : ''}
 
         <button class="fab" onclick="abrirFormProduto()">+</button>
     `;
@@ -142,9 +199,15 @@ async function abrirFormProduto(id = null) {
         </button>
 
         ${id ? `
-            <button class="btn btn-ghost mt-8" onclick="confirmarExcluirProduto(${id})" style="color: var(--danger);">
-                🗑️ Excluir Produto
-            </button>
+            <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border);">
+                <label style="display: flex; align-items: center; justify-content: space-between; cursor: pointer; font-size: 14px;">
+                    <span>${produto.ativo === 0 ? '🔴 Produto INATIVO' : '🟢 Produto Ativo'}</span>
+                    <input type="checkbox" id="prod-ativo" ${produto.ativo !== 0 ? 'checked' : ''} style="width: 22px; height: 22px;">
+                </label>
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+                    Desmarque para inativar (não aparece na lista de vendas)
+                </div>
+            </div>
         ` : ''}
     `);
 }
@@ -166,6 +229,10 @@ async function salvarProduto(id) {
     };
 
     if (id) {
+        const ativo = document.getElementById('prod-ativo').checked ? 1 : 0;
+        dados.ativo = ativo;
+        if (ativo === 0 && !dados.inativoDesde) dados.inativoDesde = getToday();
+        if (ativo === 1) dados.inativoDesde = null;
         await updateProduto(id, dados);
         showToast('✅ Produto atualizado!');
     } else {
@@ -174,7 +241,7 @@ async function salvarProduto(id) {
     }
 
     closeModal();
-    renderProdutos();
+    await renderProdutos();
 }
 
 function confirmarExcluirProduto(id) {

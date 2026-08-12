@@ -95,5 +95,30 @@ async function carregarDadosDemo() {
     await db.pagamentos.add({parcelaId:202, vendaId:vendaIdBase+3, clienteId:3, valor:53.33, data:`${julho}-10T09:00:00.000Z`, forma:'dinheiro'});
     await db.pagamentos.add({parcelaId:203, vendaId:vendaIdBase+3, clienteId:3, valor:53.33, data:`${julho}-25T11:00:00.000Z`, forma:'pix'});
 
+    // === INACTIVE ITEMS FOR DEMO ===
+    // Inactivate sanduicheira (stock 0) 
+    await db.produtos.update(8, { ativo: 0, inativoDesde: '2026-07-20' });
+
+    // Add an inactive client
+    await addCliente({nome:'Roberto Antigo', telefone:'62911112222', cidade:'Goiânia', bairro:'Setor Norte', endereco:'Rua 5, 100', referencia:'Mudou de cidade'});
+    const allClientes = await db.clientes.toArray();
+    const roberto = allClientes[allClientes.length - 1];
+    await db.clientes.update(roberto.id, { ativo: 0, inativoDesde: '2026-06-15' });
+
+    // === MORE OVERDUE PARCELAS FOR DEMO ===
+    // Make some parcelas overdue (5 days ago and 12 days ago)
+    const ha5dias = new Date(); ha5dias.setDate(ha5dias.getDate()-5);
+    const ha12dias = new Date(); ha12dias.setDate(ha12dias.getDate()-12);
+    
+    // João - parcela atrasada 12 dias
+    const pAtrasada1 = [{numero:1, valor:55, dataVencimento: ha12dias.toISOString().split('T')[0], status:'pendente'}];
+    await db.vendas.add({clienteId:2, data:'2026-07-15', descricao:'Ventilador (atrasada)', itens:[], valorTotal:55, tipo:'parcelado', numParcelas:1, taxaJuros:0, valorEntrada:0, status:'aberta', criadoEm:'2026-07-15'});
+    const lastVenda1 = (await db.vendas.toArray()).pop();
+    await db.parcelas.add({vendaId:lastVenda1.id, clienteId:2, numero:1, valor:55, dataVencimento: ha12dias.toISOString().split('T')[0], status:'pendente'});
+
+    // Fernanda - parcela atrasada 5 dias
+    const lastVenda2Id = (await db.vendas.add({clienteId:3, data:'2026-07-20', descricao:'Toalhas (atrasada)', itens:[], valorTotal:80, tipo:'parcelado', numParcelas:1, taxaJuros:0, valorEntrada:0, status:'aberta', criadoEm:'2026-07-20'}));
+    await db.parcelas.add({vendaId:lastVenda2Id, clienteId:3, numero:1, valor:80, dataVencimento: ha5dias.toISOString().split('T')[0], status:'pendente'});
+
     console.log('VendIX: Demo data loaded');
 }

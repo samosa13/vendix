@@ -20,53 +20,94 @@ async function renderVendas() {
         return;
     }
 
-    // Sort by date descending
-    vendas.sort((a, b) => b.data.localeCompare(a.data));
+    // Separate active vs quitadas
+    const ativas = vendas.filter(v => v.status !== 'quitada');
+    const quitadas = vendas.filter(v => v.status === 'quitada');
 
-    let listHTML = '';
+    // Sort active by client city, then name
+    const clienteCache = {};
     for (const v of vendas) {
-        const cliente = await getCliente(v.clienteId);
-        const parcelas = await getParcelasByVenda(v.id);
-        const pagas = parcelas.filter(p => p.status === 'pago').length;
-        const total = parcelas.length;
-        const progress = total > 0 ? (pagas / total) * 100 : 0;
+        if (!clienteCache[v.clienteId]) {
+            clienteCache[v.clienteId] = await getCliente(v.clienteId);
+        }
+    }
 
-        const statusBadge = v.status === 'quitada'
-            ? '<span class="badge badge-green">QUITADA</span>'
-            : `<span class="badge badge-orange">${pagas}/${total}</span>`;
+    ativas.sort((a, b) => {
+        const cA = clienteCache[a.clienteId];
+        const cB = clienteCache[b.clienteId];
+        const cidA = (cA?.cidade || '').toLowerCase();
+        const cidB = (cB?.cidade || '').toLowerCase();
+        if (cidA !== cidB) return cidA.localeCompare(cidB);
+        const nomeA = (cA?.nome || '').toLowerCase();
+        const nomeB = (cB?.nome || '').toLowerCase();
+        return nomeA.localeCompare(nomeB);
+    });
 
-        listHTML += `
-            <div class="list-item" onclick="abrirDetalheVenda(${v.id})" style="flex-wrap: wrap;">
-                <div class="item-icon">🛒</div>
-                <div class="item-info">
-                    <div class="item-name">${cliente ? cliente.nome : 'Cliente removido'}</div>
-                    <div class="item-detail">
-                        ${formatDate(v.data)} • ${v.tipo === 'vista' ? 'À vista' : v.numParcelas + 'x'}
-                        ${v.descricao ? ' • ' + v.descricao : ''}
-                    </div>
-                </div>
-                <div style="text-align: right;">
-                    <div class="item-value">${formatMoney(v.valorTotal)}</div>
-                    ${statusBadge}
-                </div>
-                ${v.status !== 'quitada' && total > 0 ? `
-                    <div class="parcela-progress" style="width: 100%; margin-top: 8px;">
-                        <div class="progress-bar" style="width: ${progress}%"></div>
-                    </div>
-                ` : ''}
-            </div>
-        `;
+    // Render active vendas
+    let listHTML = '';
+    for (const v of ativas) {
+        listHTML += await renderVendaItem(v, clienteCache[v.clienteId], false);
+    }
+
+    // Render quitadas (collapsed)
+    let quitadasHTML = '';
+    for (const v of quitadas) {
+        quitadasHTML += await renderVendaItem(v, clienteCache[v.clienteId], true);
     }
 
     content.innerHTML = `
         ${listHTML}
+
+        ${quitadas.length > 0 ? `
+            <div class="collapse-toggle" onclick="toggleCollapse('vendas-quitadas')">
+                <span>✅ Quitadas (${quitadas.length})</span>
+                <span class="arrow">▼</span>
+            </div>
+            <div id="vendas-quitadas" class="collapse-content hidden">
+                ${quitadasHTML}
+            </div>
+        ` : ''}
+
         <button class="fab" id="fab-venda" onclick="abrirFormVenda()">+</button>
+    `;
+}
+
+async function renderVendaItem(v, cliente, isQuitada) {
+    const parcelas = await getParcelasByVenda(v.id);
+    const pagas = parcelas.filter(p => p.status === 'pago').length;
+    const total = parcelas.length;
+    const progress = total > 0 ? (pagas / total) * 100 : 0;
+
+    const statusBadge = v.status === 'quitada'
+        ? '<span class="badge badge-green">QUITADA</span>'
+        : `<span class="badge badge-orange">${pagas}/${total}</span>`;
+
+    return `
+        <div class="list-item ${isQuitada ? 'quitada' : ''}" onclick="abrirDetalheVenda(${v.id})" style="flex-wrap: wrap;">
+            <div class="item-icon">🛒</div>
+            <div class="item-info">
+                <div class="item-name">${cliente ? cliente.nome : 'Cliente removido'}</div>
+                <div class="item-detail">
+                    ${formatDate(v.data)} • ${v.tipo === 'vista' ? 'À vista' : v.numParcelas + 'x'}
+                    ${v.descricao ? ' • ' + v.descricao : ''}
+                </div>
+            </div>
+            <div style="text-align: right;">
+                <div class="item-value">${formatMoney(v.valorTotal)}</div>
+                ${statusBadge}
+            </div>
+            ${!isQuitada && v.status !== 'quitada' && total > 0 ? `
+                <div class="parcela-progress" style="width: 100%; margin-top: 8px;">
+                    <div class="progress-bar" style="width: ${progress}%"></div>
+                </div>
+            ` : ''}
+        </div>
     `;
 }
 
 async function abrirFormVenda() {
     const clientes = await getClientes();
-    const produtos = await getProdutos();
+    const produtos = await db.produtos.toArray(); // Include inactive (shown as disabled)
 
     if (clientes.length === 0) {
         showToast('Cadastre um cliente primeiro!', true);
@@ -92,7 +133,13 @@ async function abrirFormVenda() {
             <label class="form-label">Produto (opcional)</label>
             <select class="form-input" id="venda-produto" onchange="preencherPreco()">
                 <option value="">-- Selecionar produto --</option>
-                ${produtos.map(p => `<option value="${p.id}" data-vista="${p.precoVista}" data-prazo="${p.precoPrazo}" ${(p.estoque || 0) <= 0 ? 'disabled' : ''}>${p.nome} (Est: ${p.estoque || 0})${(p.estoque || 0) <= 0 ? ' ❌ SEM ESTOQUE' : ''}</option>`).join('')}
+                ${produtos.map(p => {
+                    const semEstoque = (p.estoque || 0) <= 0;
+                    const inativo = p.ativo === 0;
+                    const disabled = semEstoque || inativo;
+                    const label = inativo ? ' 🔴 INATIVO' : (semEstoque ? ' ❌ SEM ESTOQUE' : '');
+                    return `<option value="${p.id}" data-vista="${p.precoVista}" data-prazo="${p.precoPrazo}" ${disabled ? 'disabled' : ''}>${p.nome} (Est: ${p.estoque || 0})${label}</option>`;
+                }).join('')}
             </select>
         </div>
 
@@ -331,6 +378,8 @@ async function abrirDetalheVenda(id) {
                                 <button class="btn btn-accent btn-sm" style="padding: 6px 10px; font-size: 11px; width: auto;" 
                                     onclick="pagarParcelaVenda(${p.id})">Pagar</button>
                                 <button class="btn btn-ghost btn-sm" style="padding: 6px 10px; font-size: 11px; width: auto;" 
+                                    onclick="editarValorParcelaUI(${p.id}, ${restante})">✏️</button>
+                                <button class="btn btn-ghost btn-sm" style="padding: 6px 10px; font-size: 11px; width: auto;" 
                                     onclick="editarDataParcelaUI(${p.id}, '${p.dataVencimento}')">📅</button>
                             </div>
                         ` : ''}
@@ -549,6 +598,15 @@ function editarDataParcelaUI(parcelaId, dataAtual) {
             <label class="form-label">Nova data de vencimento</label>
             <input type="date" class="form-input" id="nova-data-parcela" value="${dataAtual}" style="font-size: 18px;">
         </div>
+        <div class="form-group">
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 14px;">
+                <input type="checkbox" id="cascata-check" checked style="width: 22px; height: 22px;">
+                <span>Mover as próximas parcelas também</span>
+            </label>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px; margin-left: 32px;">
+                Se marcado, todas as parcelas seguintes se movem junto
+            </div>
+        </div>
         <button class="btn btn-accent mt-16" onclick="salvarNovaDataParcela(${parcelaId})">
             ✅ Salvar Nova Data
         </button>
@@ -561,8 +619,9 @@ async function salvarNovaDataParcela(parcelaId) {
         showToast('Selecione uma data!', true);
         return;
     }
-    await editarDataParcela(parcelaId, novaData);
-    showToast('✅ Data atualizada!');
+    const cascata = document.getElementById('cascata-check').checked;
+    await editarDataParcela(parcelaId, novaData, cascata);
+    showToast(cascata ? '✅ Datas atualizadas!' : '✅ Data atualizada!');
     closeModal();
     renderVendas();
 }
@@ -616,4 +675,38 @@ async function enviarComprovante(vendaId) {
             showToast('Cliente sem telefone cadastrado', true);
         }
     }
+}
+
+
+// ============ EDITAR VALOR DE PARCELA ============
+
+function editarValorParcelaUI(parcelaId, valorAtual) {
+    openModal(`
+        <div class="modal-header">
+            <h2 class="modal-title">✏️ Mudar Valor da Parcela</h2>
+            <button class="modal-close" onclick="closeModal()">✕</button>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Novo valor desta parcela (R$)</label>
+            <input type="number" step="0.01" class="form-input" id="novo-valor-parcela" value="${valorAtual.toFixed(2)}" style="font-size: 20px; font-weight: 700;" inputmode="decimal">
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+                A diferença será distribuída entre as outras parcelas pendentes
+            </div>
+        </div>
+        <button class="btn btn-accent mt-16" onclick="salvarNovoValorParcela(${parcelaId})">
+            ✅ Salvar Novo Valor
+        </button>
+    `);
+}
+
+async function salvarNovoValorParcela(parcelaId) {
+    const novoValor = parseFloat(document.getElementById('novo-valor-parcela').value);
+    if (!novoValor || novoValor <= 0) {
+        showToast('Digite um valor válido!', true);
+        return;
+    }
+    await editarValorParcela(parcelaId, novoValor);
+    showToast('✅ Valores atualizados!');
+    closeModal();
+    renderVendas();
 }

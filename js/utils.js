@@ -135,3 +135,12 @@ function whatsappLink(phone, message = '') {
     const num = clean.startsWith('55') ? clean : '55' + clean;
     return `https://wa.me/${num}${message ? '?text=' + encodeURIComponent(message) : ''}`;
 }
+
+
+// Toggle collapsible section
+function toggleCollapse(id) {
+    const content = document.getElementById(id);
+    const toggle = content.previousElementSibling;
+    content.classList.toggle('hidden');
+    toggle.classList.toggle('open');
+}

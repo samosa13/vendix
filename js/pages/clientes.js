@@ -4,6 +4,19 @@
 
 async function renderClientes() {
     const clientes = await getClientes();
+    const todosComInativos = await db.clientes.toArray();
+    const inativos = todosComInativos.filter(c => c.ativo === 0);
+
+    // Sort by city, then bairro, then name
+    clientes.sort((a, b) => {
+        const cidadeA = (a.cidade || '').toLowerCase();
+        const cidadeB = (b.cidade || '').toLowerCase();
+        if (cidadeA !== cidadeB) return cidadeA.localeCompare(cidadeB);
+        const bairroA = (a.bairro || '').toLowerCase();
+        const bairroB = (b.bairro || '').toLowerCase();
+        if (bairroA !== bairroB) return bairroA.localeCompare(bairroB);
+        return (a.nome || '').localeCompare(b.nome || '');
+    });
 
     const content = document.getElementById('app-content');
     content.innerHTML = `
@@ -34,6 +47,26 @@ async function renderClientes() {
                 </div>
             `).join('')}
         </div>
+
+        ${inativos.length > 0 ? `
+            <div class="collapse-toggle" onclick="toggleCollapse('inativos-clientes')">
+                <span>👤 Inativos (${inativos.length})</span>
+                <span class="arrow">▼</span>
+            </div>
+            <div id="inativos-clientes" class="collapse-content hidden">
+                ${inativos.map(c => `
+                    <div class="list-item item-inactive" onclick="abrirDetalheCliente(${c.id})">
+                        <div class="item-icon">👤</div>
+                        <div class="item-info">
+                            <div class="item-name">${c.nome}</div>
+                            <div class="item-detail" style="color: var(--text-muted);">
+                                Inativo ${c.inativoDesde ? 'desde ' + formatDate(c.inativoDesde) : ''}
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        ` : ''}
 
         <button class="fab" onclick="abrirFormCliente()">+</button>
     `;
@@ -173,9 +206,15 @@ async function abrirFormCliente(id = null) {
         </button>
 
         ${id ? `
-            <button class="btn btn-ghost mt-8" onclick="confirmarExcluirCliente(${id})" style="color: var(--danger);">
-                🗑️ Excluir Cliente
-            </button>
+            <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border);">
+                <label style="display: flex; align-items: center; justify-content: space-between; cursor: pointer; font-size: 14px;">
+                    <span>${cliente.ativo === 0 ? '🔴 Cliente INATIVO' : '🟢 Cliente Ativo'}</span>
+                    <input type="checkbox" id="cli-ativo" ${cliente.ativo !== 0 ? 'checked' : ''} style="width: 22px; height: 22px;">
+                </label>
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+                    Desmarque para inativar (não aparece nas listas)
+                </div>
+            </div>
         ` : ''}
     `);
 }
@@ -197,6 +236,10 @@ async function salvarCliente(id) {
     };
 
     if (id) {
+        const ativo = document.getElementById('cli-ativo').checked ? 1 : 0;
+        dados.ativo = ativo;
+        if (ativo === 0 && !dados.inativoDesde) dados.inativoDesde = getToday();
+        if (ativo === 1) dados.inativoDesde = null;
         await updateCliente(id, dados);
         showToast('✅ Cliente atualizado!');
     } else {
