@@ -224,7 +224,7 @@ async function getParcelasByVenda(vendaId) {
 }
 
 async function getParcelasPendentes() {
-    return await db.parcelas.where('status').anyOf(['pendente', 'atrasado']).toArray();
+    return await db.parcelas.where('status').anyOf(['pendente', 'atrasado', 'parcial']).toArray();
 }
 
 async function getParcelasHoje() {
@@ -250,13 +250,22 @@ async function getParcelasFuturas(dias = 7) {
     return pendentes.filter(p => p.dataVencimento >= hojeStr && p.dataVencimento <= limiteStr);
 }
 
-async function marcarParcelaPaga(parcelaId, formaPagamento) {
+async function marcarParcelaPaga(parcelaId, formaPagamento, valorRecebido = null) {
     const parcela = await db.parcelas.get(parcelaId);
     if (!parcela) return;
 
+    const valorTotal = parcela.valor;
+    const jaPago = parcela.valorPago || 0;
+    const valorEfetivo = valorRecebido !== null ? valorRecebido : (valorTotal - jaPago);
+    const novoTotalPago = jaPago + valorEfetivo;
+
+    // Determine new status
+    const novoStatus = novoTotalPago >= valorTotal ? 'pago' : 'parcial';
+
     await db.parcelas.update(parcelaId, {
-        status: 'pago',
-        dataPagamento: new Date().toISOString().split('T')[0],
+        status: novoStatus,
+        valorPago: novoTotalPago,
+        dataPagamento: novoStatus === 'pago' ? new Date().toISOString().split('T')[0] : undefined,
         formaPagamento: formaPagamento
     });
 
@@ -265,7 +274,7 @@ async function marcarParcelaPaga(parcelaId, formaPagamento) {
         parcelaId: parcelaId,
         vendaId: parcela.vendaId,
         clienteId: parcela.clienteId,
-        valor: parcela.valor,
+        valor: valorEfetivo,
         data: new Date().toISOString(),
         forma: formaPagamento
     });
@@ -320,4 +329,10 @@ async function getRecebidoMesAtual() {
 
     const pagamentos = await db.pagamentos.where('data').above(inicioMes).toArray();
     return pagamentos.reduce((sum, p) => sum + p.valor, 0);
+}
+
+
+// Update parcela due date
+async function editarDataParcela(parcelaId, novaData) {
+    return await db.parcelas.update(parcelaId, { dataVencimento: novaData });
 }

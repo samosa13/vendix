@@ -308,26 +308,31 @@ async function abrirDetalheVenda(id) {
 
         ${parcelas.map(p => {
             const isAtrasado = p.status === 'pendente' && p.dataVencimento < hoje;
-            const statusIcon = p.status === 'pago' ? '✅' : (isAtrasado ? '🔴' : '🟡');
+            const isParcial = p.status === 'parcial';
+            const statusIcon = p.status === 'pago' ? '✅' : (isParcial ? '🟠' : (isAtrasado ? '🔴' : '🟡'));
+            const restante = p.valor - (p.valorPago || 0);
 
             return `
                 <div class="venda-item">
-                    <div>
+                    <div style="flex: 1;">
                         <div style="font-weight: 600;">${statusIcon} Parcela ${p.numero}</div>
                         <div style="font-size: 12px; color: var(--text-secondary);">
                             Venc: ${formatDate(p.dataVencimento)}
                             ${p.dataPagamento ? ' • Pago: ' + formatDate(p.dataPagamento) : ''}
+                            ${isParcial ? ' • Pago parcial: ' + formatMoney(p.valorPago) : ''}
                         </div>
                     </div>
                     <div style="text-align: right;">
                         <div style="font-weight: 700; ${p.status === 'pago' ? 'color: var(--accent)' : isAtrasado ? 'color: var(--danger)' : ''}">
-                            ${formatMoney(p.valor)}
+                            ${p.status === 'pago' ? formatMoney(p.valor) : formatMoney(restante)}
                         </div>
                         ${p.status !== 'pago' ? `
-                            <button class="btn btn-accent btn-sm" style="padding: 6px 12px; font-size: 12px; width: auto; margin-top: 4px;" 
-                                onclick="pagarParcelaVenda(${p.id})">
-                                Pagar
-                            </button>
+                            <div style="display: flex; gap: 4px; margin-top: 4px; justify-content: flex-end;">
+                                <button class="btn btn-accent btn-sm" style="padding: 6px 10px; font-size: 11px; width: auto;" 
+                                    onclick="pagarParcelaVenda(${p.id})">Pagar</button>
+                                <button class="btn btn-ghost btn-sm" style="padding: 6px 10px; font-size: 11px; width: auto;" 
+                                    onclick="editarDataParcelaUI(${p.id}, '${p.dataVencimento}')">📅</button>
+                            </div>
                         ` : ''}
                     </div>
                 </div>
@@ -336,6 +341,9 @@ async function abrirDetalheVenda(id) {
 
         <!-- Action buttons -->
         <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
+            <button class="btn btn-ghost mb-8" onclick="enviarComprovante(${id})">
+                📲 Enviar Comprovante por WhatsApp
+            </button>
             <button class="btn btn-ghost mb-8" onclick="closeModal(); abrirEditarVenda(${id})">
                 ✏️ Editar Venda
             </button>
@@ -479,26 +487,133 @@ async function executarCancelamento(id) {
 // ============ PAGAR PARCELA ============
 
 async function pagarParcelaVenda(parcelaId) {
+    const parcela = await db.parcelas.get(parcelaId);
+    const restante = parcela.valor - (parcela.valorPago || 0);
+
     openModal(`
         <div class="modal-header">
             <h2 class="modal-title">💰 Registrar Pagamento</h2>
             <button class="modal-close" onclick="closeModal()">✕</button>
         </div>
-        <p style="margin-bottom: 16px; color: var(--text-secondary);">Como o cliente pagou?</p>
+        <div style="margin-bottom: 16px;">
+            <div style="font-size: 13px; color: var(--text-secondary);">Valor da parcela</div>
+            <div style="font-size: 20px; font-weight: 800;">${formatMoney(restante)}</div>
+            ${(parcela.valorPago || 0) > 0 ? `<div style="font-size: 12px; color: var(--accent);">Já pago anteriormente: ${formatMoney(parcela.valorPago)}</div>` : ''}
+        </div>
+        <div class="form-group">
+            <label class="form-label">Valor recebido agora (R$)</label>
+            <input type="number" step="0.01" class="form-input" id="pag-valor" value="${restante}" style="font-size: 18px; font-weight: 700;" inputmode="decimal">
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+                Se o cliente pagou menos, digite o valor que recebeu
+            </div>
+        </div>
+        <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px;">Como pagou?</div>
         <div class="action-row">
-            <button class="btn btn-accent" onclick="confirmarPagamento(${parcelaId}, 'pix')">
+            <button class="btn btn-accent" onclick="confirmarPagamentoValor(${parcelaId}, 'pix')">
                 📱 Pix
             </button>
-            <button class="btn btn-ghost" onclick="confirmarPagamento(${parcelaId}, 'dinheiro')">
+            <button class="btn btn-ghost" onclick="confirmarPagamentoValor(${parcelaId}, 'dinheiro')">
                 💵 Dinheiro
             </button>
         </div>
     `);
 }
 
-async function confirmarPagamento(parcelaId, forma) {
-    await marcarParcelaPaga(parcelaId, forma);
-    showToast('✅ Pagamento registrado!');
+async function confirmarPagamentoValor(parcelaId, forma) {
+    const valorInput = parseFloat(document.getElementById('pag-valor').value);
+    if (!valorInput || valorInput <= 0) {
+        showToast('Digite o valor recebido!', true);
+        return;
+    }
+    await marcarParcelaPaga(parcelaId, forma, valorInput);
+    const parcela = await db.parcelas.get(parcelaId);
+    if (parcela.status === 'pago') {
+        showToast('✅ Parcela quitada!');
+    } else {
+        showToast('✅ Pagamento parcial registrado!');
+    }
     closeModal();
     renderVendas();
+}
+
+
+// ============ EDITAR FECHA DE PARCELA ============
+
+function editarDataParcelaUI(parcelaId, dataAtual) {
+    openModal(`
+        <div class="modal-header">
+            <h2 class="modal-title">📅 Mudar Vencimento</h2>
+            <button class="modal-close" onclick="closeModal()">✕</button>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Nova data de vencimento</label>
+            <input type="date" class="form-input" id="nova-data-parcela" value="${dataAtual}" style="font-size: 18px;">
+        </div>
+        <button class="btn btn-accent mt-16" onclick="salvarNovaDataParcela(${parcelaId})">
+            ✅ Salvar Nova Data
+        </button>
+    `);
+}
+
+async function salvarNovaDataParcela(parcelaId) {
+    const novaData = document.getElementById('nova-data-parcela').value;
+    if (!novaData) {
+        showToast('Selecione uma data!', true);
+        return;
+    }
+    await editarDataParcela(parcelaId, novaData);
+    showToast('✅ Data atualizada!');
+    closeModal();
+    renderVendas();
+}
+
+// ============ COMPROVANTE WHATSAPP ============
+
+async function enviarComprovante(vendaId) {
+    const venda = await getVenda(vendaId);
+    if (!venda) return;
+
+    const cliente = await getCliente(venda.clienteId);
+    const parcelas = await getParcelasByVenda(vendaId);
+
+    // Build comprovante text
+    let texto = `🧾 *COMPROVANTE DE COMPRA*\n`;
+    texto += `━━━━━━━━━━━━━━━━━━\n`;
+    texto += `*Cliente:* ${cliente ? cliente.nome : '-'}\n`;
+    texto += `*Produto:* ${venda.descricao || '-'}\n`;
+    texto += `*Data:* ${formatDate(venda.data)}\n`;
+    texto += `*Valor:* ${formatMoney(venda.valorTotal)}`;
+    if (venda.tipo === 'parcelado') {
+        texto += ` (${venda.numParcelas}x ${formatMoney(parcelas[0]?.valor || 0)})`;
+    } else {
+        texto += ` (à vista)`;
+    }
+    texto += `\n`;
+
+    if (venda.tipo === 'parcelado') {
+        texto += `\n📅 *PARCELAS:*\n`;
+        for (const p of parcelas) {
+            const statusEmoji = p.status === 'pago' ? '✅' : (p.status === 'parcial' ? '🟠' : '⬜');
+            texto += `${statusEmoji} ${p.numero}ª - ${formatDate(p.dataVencimento)} - ${formatMoney(p.valor)}`;
+            if (p.status === 'pago') texto += ' (pago)';
+            if (p.status === 'parcial') texto += ` (pago ${formatMoney(p.valorPago || 0)})`;
+            texto += `\n`;
+        }
+    }
+
+    texto += `\nObrigado pela preferência! 🙏`;
+
+    // Open WhatsApp with text
+    if (cliente && cliente.telefone) {
+        const link = whatsappLink(cliente.telefone, texto);
+        window.open(link, '_blank');
+    } else {
+        // Copy to clipboard if no phone
+        try {
+            await navigator.clipboard.writeText(texto);
+            showToast('📋 Comprovante copiado!');
+        } catch(e) {
+            showToast('Cliente sem telefone cadastrado', true);
+        }
+    }
 }
