@@ -266,6 +266,35 @@ async function executarLimparDados() {
     localStorage.removeItem('vendix_last_backup');
     localStorage.removeItem('vendix_first_use');
     closeModal();
-    showToast('🗑️ Dados apagados! Começando do zero.');
+    showToast('🗑️ Dados apagados!');
+
+    // Ask if wants demo data
+    setTimeout(() => {
+        openModal(`
+            <div class="modal-header">
+                <h2 class="modal-title">🎉 Tudo limpo!</h2>
+                <button class="modal-close" onclick="closeModal(); navigateTo('dashboard');">✕</button>
+            </div>
+            <div style="padding: 16px 0; text-align: center;">
+                <div style="font-size: 48px; margin-bottom: 12px;">📦</div>
+                <p style="font-size: 15px; margin-bottom: 8px;">
+                    Quer carregar dados de exemplo para testar o app?
+                </p>
+                <p style="font-size: 13px; color: var(--text-secondary);">
+                    São produtos, clientes e vendas fictícias para você explorar como funciona.
+                </p>
+            </div>
+            <div class="confirm-actions">
+                <button class="btn btn-ghost" onclick="closeModal(); navigateTo('dashboard');">Não, começar vazio</button>
+                <button class="btn btn-accent" onclick="carregarDemoENavegar()">Sim, carregar exemplos</button>
+            </div>
+        `);
+    }, 300);
+}
+
+async function carregarDemoENavegar() {
+    closeModal();
+    await carregarDadosDemo();
+    showToast('✅ Dados de exemplo carregados!');
     navigateTo('dashboard');
 }
