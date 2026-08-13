@@ -20,7 +20,7 @@ async function renderVendas() {
         return;
     }
 
-    // Separate: active vendas, quitadas, and vendas of inactive clients
+setInterval    // Separate: active vendas, quitadas, and vendas of inactive clients
     const clientesInativos = (await db.clientes.toArray()).filter(c => c.ativo === 0).map(c => c.id);
     const ativas = vendas.filter(v => v.status !== 'quitada' && !clientesInativos.includes(v.clienteId));
     const vendasClienteInativo = vendas.filter(v => v.status !== 'quitada' && clientesInativos.includes(v.clienteId));
@@ -162,26 +162,20 @@ async function abrirFormVenda() {
 
         <div class="form-group">
             <label class="form-label">Cliente</label>
-            <input type="text" class="form-input" id="venda-cliente-search" placeholder="🔍 Buscar cliente..." oninput="filtrarSelectCliente()" autocomplete="off">
-            <select class="form-input" id="venda-cliente" style="margin-top: 4px;">
-                <option value="">Selecione o cliente</option>
-                ${clientes.map(c => `<option value="${c.id}">${c.nome} — ${c.bairro || ''}, ${c.cidade || ''}</option>`).join('')}
-            </select>
+            <input type="text" class="form-input" id="venda-cliente-input" list="clientes-datalist" placeholder="🔍 Digitar nome do cliente..." autocomplete="off">
+            <datalist id="clientes-datalist">
+                ${clientes.map(c => `<option value="${c.nome}" data-id="${c.id}">${c.bairro || ''}, ${c.cidade || ''}</option>`).join('')}
+            </datalist>
+            <input type="hidden" id="venda-cliente" value="">
         </div>
 
         <div class="form-group">
             <label class="form-label">Produto (opcional)</label>
-            <input type="text" class="form-input" id="venda-produto-search" placeholder="🔍 Buscar produto..." oninput="filtrarSelectProduto()" autocomplete="off">
-            <select class="form-input" id="venda-produto" onchange="preencherPreco()" style="margin-top: 4px;">
-                <option value="">-- Selecionar produto --</option>
-                ${produtos.map(p => {
-                    const semEstoque = (p.estoque || 0) <= 0;
-                    const inativo = p.ativo === 0;
-                    const disabled = semEstoque || inativo;
-                    const label = inativo ? ' 🔴 INATIVO' : (semEstoque ? ' ❌ SEM ESTOQUE' : '');
-                    return `<option value="${p.id}" data-vista="${p.precoVista}" data-prazo="${p.precoPrazo}" ${disabled ? 'disabled' : ''}>${p.nome} (Est: ${p.estoque || 0})${label}</option>`;
-                }).join('')}
-            </select>
+            <input type="text" class="form-input" id="venda-produto-input" list="produtos-datalist" placeholder="🔍 Digitar nome do produto..." autocomplete="off" oninput="selecionarProdutoDatalist()">
+            <datalist id="produtos-datalist">
+                ${produtos.filter(p => p.ativo !== 0 && (p.estoque || 0) > 0).map(p => `<option value="${p.nome}" data-id="${p.id}" data-vista="${p.precoVista}" data-prazo="${p.precoPrazo}">${p.nome} (Est: ${p.estoque})</option>`).join('')}
+            </datalist>
+            <input type="hidden" id="venda-produto" value="">
         </div>
 
         <div class="form-group">
@@ -231,6 +225,7 @@ async function abrirFormVenda() {
     window._tipoVenda = 'parcelado';
 }
 
+// selectTipoVenda also updates product price from datalist
 function selectTipoVenda(tipo) {
     window._tipoVenda = tipo;
     document.getElementById('tab-vista').classList.toggle('active', tipo === 'vista');
@@ -238,25 +233,27 @@ function selectTipoVenda(tipo) {
     document.getElementById('opcoes-parcelado').style.display = tipo === 'parcelado' ? 'block' : 'none';
 
     // Update price if product is selected
-    const select = document.getElementById('venda-produto');
-    if (select && select.value) {
-        const option = select.options[select.selectedIndex];
-        const preco = tipo === 'vista' ? option.dataset.vista : option.dataset.prazo;
-        if (preco) {
-            document.getElementById('venda-valor').value = preco;
-        }
-    }
+    selecionarProdutoDatalist();
 }
 
 function preencherPreco() {
-    const select = document.getElementById('venda-produto');
-    const option = select.options[select.selectedIndex];
-    if (option.value) {
-        const tipo = window._tipoVenda;
-        const preco = tipo === 'vista' ? option.dataset.vista : option.dataset.prazo;
-        document.getElementById('venda-valor').value = preco || '';
-        document.getElementById('venda-descricao').value = option.textContent.split(' (Est')[0];
-        calcularPreview();
+    selecionarProdutoDatalist();
+}
+
+function selecionarProdutoDatalist() {
+    const input = document.getElementById('venda-produto-input');
+    const datalist = document.getElementById('produtos-datalist');
+    const options = datalist.querySelectorAll('option');
+    for (const opt of options) {
+        if (opt.value === input.value) {
+            const tipo = window._tipoVenda;
+            const preco = tipo === 'vista' ? opt.dataset.vista : opt.dataset.prazo;
+            if (preco) document.getElementById('venda-valor').value = preco;
+            document.getElementById('venda-descricao').value = opt.value;
+            document.getElementById('venda-produto').value = opt.dataset.id;
+            calcularPreview();
+            break;
+        }
     }
 }
 
@@ -293,11 +290,15 @@ function calcularPreview() {
 }
 
 async function salvarVenda() {
-    const clienteId = parseInt(document.getElementById('venda-cliente').value);
-    if (!clienteId) {
-        showToast('Selecione um cliente!', true);
+    // Resolve client from datalist input
+    const clienteInput = document.getElementById('venda-cliente-input').value.trim();
+    const clientes = await getClientes();
+    const clienteMatch = clientes.find(c => c.nome.toLowerCase() === clienteInput.toLowerCase());
+    if (!clienteMatch) {
+        showToast('Selecione um cliente válido!', true);
         return;
     }
+    const clienteId = clienteMatch.id;
 
     const valor = parseFloat(document.getElementById('venda-valor').value);
     if (!valor || valor <= 0) {
@@ -308,17 +309,16 @@ async function salvarVenda() {
     const tipo = window._tipoVenda;
     const descricao = document.getElementById('venda-descricao').value.trim();
 
-    // Get produto info
-    const produtoSelect = document.getElementById('venda-produto');
-    const produtoId = produtoSelect.value ? parseInt(produtoSelect.value) : null;
+    // Get produto info from datalist
+    const produtoInput = document.getElementById('venda-produto-input').value.trim();
+    const allProdutos = await db.produtos.toArray();
+    const produtoMatch = produtoInput ? allProdutos.find(p => p.nome.toLowerCase() === produtoInput.toLowerCase() && p.ativo !== 0) : null;
+    const produtoId = produtoMatch ? produtoMatch.id : null;
 
     // Check stock availability
-    if (produtoId) {
-        const produto = await getProduto(produtoId);
-        if (produto && (produto.estoque || 0) <= 0) {
-            showToast('⚠️ Produto sem estoque!', true);
-            return;
-        }
+    if (produtoMatch && (produtoMatch.estoque || 0) <= 0) {
+        showToast('⚠️ Produto sem estoque!', true);
+        return;
     }
 
     let parcelas = [];
@@ -769,24 +769,6 @@ async function salvarNovoValorParcela(parcelaId) {
 }
 
 
-// Search filters for cliente/produto selects
-function filtrarSelectCliente() {
-    const search = document.getElementById('venda-cliente-search').value.toLowerCase();
-    const select = document.getElementById('venda-cliente');
-    for (const opt of select.options) {
-        if (opt.value === '') { opt.style.display = ''; continue; }
-        opt.style.display = opt.textContent.toLowerCase().includes(search) ? '' : 'none';
-    }
-}
-
-function filtrarSelectProduto() {
-    const search = document.getElementById('venda-produto-search').value.toLowerCase();
-    const select = document.getElementById('venda-produto');
-    for (const opt of select.options) {
-        if (opt.value === '') { opt.style.display = ''; continue; }
-        opt.style.display = opt.textContent.toLowerCase().includes(search) ? '' : 'none';
-    }
-}
 
 
 // Grouped vendas navigation

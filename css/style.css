@@ -115,7 +115,7 @@ body {
     margin-top: var(--header-height);
     margin-bottom: var(--nav-height);
     padding: 16px;
-    padding-bottom: 100px;
+    padding-bottom: 120px;
     min-height: calc(100vh - var(--header-height) - var(--nav-height));
 }
 
