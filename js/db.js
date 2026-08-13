@@ -256,20 +256,18 @@ async function marcarParcelaPaga(parcelaId, formaPagamento, valorRecebido = null
 
     const valorTotal = parcela.valor;
     const jaPago = parcela.valorPago || 0;
-    const valorEfetivo = valorRecebido !== null ? valorRecebido : (valorTotal - jaPago);
-    const novoTotalPago = jaPago + valorEfetivo;
+    const restante = valorTotal - jaPago;
+    const valorEfetivo = valorRecebido !== null ? valorRecebido : restante;
 
-    // Determine new status
-    const novoStatus = novoTotalPago >= valorTotal ? 'pago' : 'parcial';
-
+    // ALWAYS close the parcela as paid
     await db.parcelas.update(parcelaId, {
-        status: novoStatus,
-        valorPago: novoTotalPago,
-        dataPagamento: novoStatus === 'pago' ? new Date().toISOString().split('T')[0] : undefined,
+        status: 'pago',
+        valorPago: valorTotal,
+        dataPagamento: new Date().toISOString().split('T')[0],
         formaPagamento: formaPagamento
     });
 
-    // Register payment
+    // Register payment for actual amount received
     await db.pagamentos.add({
         parcelaId: parcelaId,
         vendaId: parcela.vendaId,
@@ -278,6 +276,19 @@ async function marcarParcelaPaga(parcelaId, formaPagamento, valorRecebido = null
         data: new Date().toISOString(),
         forma: formaPagamento
     });
+
+    // If paid less than remaining, redistribute difference to other pending parcelas
+    if (valorEfetivo < restante - 0.01) {
+        const diff = restante - valorEfetivo;
+        const todasParcelas = await db.parcelas.where('vendaId').equals(parcela.vendaId).toArray();
+        const pendentes = todasParcelas.filter(p => p.id !== parcelaId && p.status !== 'pago');
+        if (pendentes.length > 0) {
+            const ajuste = Math.round((diff / pendentes.length) * 100) / 100;
+            for (const p of pendentes) {
+                await db.parcelas.update(p.id, { valor: Math.round((p.valor + ajuste) * 100) / 100 });
+            }
+        }
+    }
 
     // Check if all parcelas are paid → mark venda as quitada
     const todasParcelas = await db.parcelas.where('vendaId').equals(parcela.vendaId).toArray();

@@ -424,9 +424,9 @@ async function abrirDetalheVenda(id) {
                                 <button class="btn btn-accent btn-sm" style="padding: 6px 10px; font-size: 11px; width: auto;" 
                                     onclick="pagarParcelaVenda(${p.id})">Pagar</button>
                                 <button class="btn btn-ghost btn-sm" style="padding: 6px 10px; font-size: 11px; width: auto;" 
-                                    onclick="editarValorParcelaUI(${p.id}, ${restante})">✏️</button>
+                                    onclick="editarValorParcelaUI(${p.id}, ${restante}, ${id})">✏️</button>
                                 <button class="btn btn-ghost btn-sm" style="padding: 6px 10px; font-size: 11px; width: auto;" 
-                                    onclick="editarDataParcelaUI(${p.id}, '${p.dataVencimento}')">📅</button>
+                                    onclick="editarDataParcelaUI(${p.id}, '${p.dataVencimento}', ${id})">📅</button>
                             </div>
                         ` : ''}
                     </div>
@@ -466,7 +466,7 @@ async function abrirEditarVenda(id) {
     openModal(`
         <div class="modal-header">
             <h2 class="modal-title">✏️ Editar Venda #${id}</h2>
-            <button class="modal-close" onclick="closeModal()">✕</button>
+            <button class="modal-close" onclick="abrirDetalheVenda(${id})">✕</button>
         </div>
 
         ${pagas.length > 0 ? `
@@ -587,11 +587,12 @@ async function executarCancelamento(id) {
 async function pagarParcelaVenda(parcelaId) {
     const parcela = await db.parcelas.get(parcelaId);
     const restante = parcela.valor - (parcela.valorPago || 0);
+    const vendaId = parcela.vendaId;
 
     openModal(`
         <div class="modal-header">
             <h2 class="modal-title">💰 Registrar Pagamento</h2>
-            <button class="modal-close" onclick="closeModal()">✕</button>
+            <button class="modal-close" onclick="abrirDetalheVenda(${vendaId})">✕</button>
         </div>
         <div style="margin-bottom: 16px;">
             <div style="font-size: 13px; color: var(--text-secondary);">Valor da parcela</div>
@@ -637,11 +638,11 @@ async function confirmarPagamentoValor(parcelaId, forma) {
 
 // ============ EDITAR FECHA DE PARCELA ============
 
-function editarDataParcelaUI(parcelaId, dataAtual) {
+function editarDataParcelaUI(parcelaId, dataAtual, vendaId) {
     openModal(`
         <div class="modal-header">
             <h2 class="modal-title">📅 Mudar Vencimento</h2>
-            <button class="modal-close" onclick="closeModal()">✕</button>
+            <button class="modal-close" onclick="abrirDetalheVenda(${vendaId})">✕</button>
         </div>
         <div class="form-group">
             <label class="form-label">Nova data de vencimento</label>
@@ -733,11 +734,11 @@ async function enviarComprovante(vendaId) {
 
 // ============ EDITAR VALOR DE PARCELA ============
 
-function editarValorParcelaUI(parcelaId, valorAtual) {
+function editarValorParcelaUI(parcelaId, valorAtual, vendaId) {
     openModal(`
         <div class="modal-header">
             <h2 class="modal-title">✏️ Mudar Valor da Parcela</h2>
-            <button class="modal-close" onclick="closeModal()">✕</button>
+            <button class="modal-close" onclick="abrirDetalheVenda(${vendaId})">✕</button>
         </div>
         <div class="form-group">
             <label class="form-label">Novo valor desta parcela (R$)</label>

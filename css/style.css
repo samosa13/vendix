@@ -786,6 +786,7 @@ textarea.form-input {
     align-items: center;
     justify-content: space-between;
     padding: 10px 16px;
+    padding-right: 72px;
     background: var(--bg-input);
     border-radius: var(--radius-sm);
     margin: 12px 0 8px 0;
@@ -793,6 +794,8 @@ textarea.form-input {
     font-size: 13px;
     font-weight: 600;
     color: var(--text-secondary);
+    position: relative;
+    z-index: 51;
 }
 
 .collapse-toggle .arrow {
