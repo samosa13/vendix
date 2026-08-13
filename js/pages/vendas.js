@@ -26,6 +26,17 @@ setInterval    // Separate: active vendas, quitadas, and vendas of inactive clie
     const vendasClienteInativo = vendas.filter(v => v.status !== 'quitada' && clientesInativos.includes(v.clienteId));
     const quitadas = vendas.filter(v => v.status === 'quitada');
 
+    // Sort by date (most recent first by default)
+    window._vendasOrdenAsc = window._vendasOrdenAsc || false;
+    ativas.sort((a, b) => window._vendasOrdenAsc ? a.data.localeCompare(b.data) : b.data.localeCompare(a.data));
+
+    let listHTML = '';
+
+    // Sort toggle button
+    listHTML += `<button class="btn btn-ghost btn-sm mb-8" onclick="toggleOrdenVendas()" style="width: auto; font-size: 12px;">
+        ${window._vendasOrdenAsc ? '📅 Mais antigas primeiro' : '📅 Mais recentes primeiro'} ↕️
+    </button>`;
+
     // Cache clients
     const clienteCache = {};
     for (const v of vendas) {
@@ -33,20 +44,6 @@ setInterval    // Separate: active vendas, quitadas, and vendas of inactive clie
             clienteCache[v.clienteId] = await getCliente(v.clienteId);
         }
     }
-
-    // Sort active by client city, then name
-    ativas.sort((a, b) => {
-        const cA = clienteCache[a.clienteId];
-        const cB = clienteCache[b.clienteId];
-        const cidA = (cA?.cidade || '').toLowerCase();
-        const cidB = (cB?.cidade || '').toLowerCase();
-        if (cidA !== cidB) return cidA.localeCompare(cidB);
-        const nomeA = (cA?.nome || '').toLowerCase();
-        const nomeB = (cB?.nome || '').toLowerCase();
-        return nomeA.localeCompare(nomeB);
-    });
-
-    let listHTML = '';
 
     // Check if grouped mode
     if (configVal('agruparVendasCliente')) {
@@ -93,7 +90,7 @@ setInterval    // Separate: active vendas, quitadas, and vendas of inactive clie
                 <span class="arrow">▼</span>
             </div>
             <div id="vendas-cliente-inativo" class="collapse-content hidden">
-                ${(await Promise.all(vendasClienteInativo.map(v => renderVendaItem(v, clienteCache[v.clienteId], true)))).join('')}
+                ${configVal('agruparVendasCliente') ? await renderVendasAgrupadasHTML(vendasClienteInativo, clienteCache) : (await Promise.all(vendasClienteInativo.map(v => renderVendaItem(v, clienteCache[v.clienteId], true)))).join('')}
             </div>
         ` : ''}
 
@@ -199,7 +196,7 @@ async function abrirFormVenda() {
                 <div class="form-group">
                     <label class="form-label">Nº Parcelas</label>
                     <select class="form-input" id="venda-parcelas" onchange="calcularPreview()">
-                        ${[2,3,4,5,6,8,10,12].map(n => `<option value="${n}" ${n === configVal('parcelasPadrao') ? 'selected' : ''}>${n}x</option>`).join('')}
+                        ${[2,3,4,5,6,8,10,12,15,18,24,36].map(n => `<option value="${n}" ${n === configVal('parcelasPadrao') ? 'selected' : ''}>${n}x</option>`).join('')}
                     </select>
                 </div>
                 <div class="form-group">
@@ -503,7 +500,7 @@ async function abrirEditarVenda(id) {
                 <div class="form-group">
                     <label class="form-label">Nº Parcelas Total</label>
                     <select class="form-input" id="edit-venda-parcelas">
-                        ${[2,3,4,5,6,8,10,12,15,18,24].map(n => `<option value="${n}" ${n === venda.numParcelas ? 'selected' : ''}>${n}x</option>`).join('')}
+                        ${[2,3,4,5,6,8,10,12,15,18,24,36].map(n => `<option value="${n}" ${n === venda.numParcelas ? 'selected' : ''}>${n}x</option>`).join('')}
                     </select>
                     <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
                         Aumente para adicionar mais parcelas (redistribui o pendente)
@@ -842,4 +839,35 @@ async function mostrarVendaAgrupada(idx) {
             Ver detalhes completos →
         </button>
     `);
+}
+
+
+function toggleOrdenVendas() {
+    window._vendasOrdenAsc = !window._vendasOrdenAsc;
+    renderVendas();
+}
+
+
+async function renderVendasAgrupadasHTML(vendasList, clienteCache) {
+    const byClient = {};
+    for (const v of vendasList) {
+        if (!byClient[v.clienteId]) byClient[v.clienteId] = [];
+        byClient[v.clienteId].push(v);
+    }
+    let html = '';
+    for (const [clienteId, vendasCliente] of Object.entries(byClient)) {
+        const cliente = clienteCache[clienteId];
+        const totalPendente = vendasCliente.reduce((s, v) => s + v.valorTotal, 0);
+        html += `
+            <div class="list-item item-inactive" onclick="abrirVendasAgrupadas(${clienteId})" style="flex-wrap: wrap;">
+                <div class="item-icon">👤</div>
+                <div class="item-info">
+                    <div class="item-name">${cliente ? cliente.nome : 'Cliente'}</div>
+                    <div class="item-detail">${vendasCliente.length} venda${vendasCliente.length > 1 ? 's' : ''}</div>
+                </div>
+                <div class="item-value">${formatMoney(totalPendente)}</div>
+            </div>
+        `;
+    }
+    return html;
 }

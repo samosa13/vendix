@@ -377,7 +377,23 @@ async function executarPagCobranca(parcelaId, forma, valor) {
     const parcela = await db.parcelas.get(parcelaId);
     const restante = parcela.valor - (parcela.valorPago || 0);
 
-    await marcarParcelaPaga(parcelaId, forma, valor);
+    // Mark this parcela as FULLY paid (closed) regardless of amount
+    await db.parcelas.update(parcelaId, {
+        status: 'pago',
+        valorPago: parcela.valor,
+        dataPagamento: new Date().toISOString().split('T')[0],
+        formaPagamento: forma
+    });
+
+    // Register payment for actual amount received
+    await db.pagamentos.add({
+        parcelaId: parcelaId,
+        vendaId: parcela.vendaId,
+        clienteId: parcela.clienteId,
+        valor: valor,
+        data: new Date().toISOString(),
+        forma: forma
+    });
 
     // If paid less, redistribute difference among remaining parcelas
     if (valor < restante - 0.01) {
@@ -387,9 +403,15 @@ async function executarPagCobranca(parcelaId, forma, valor) {
         if (pendentes.length > 0) {
             const ajuste = Math.round((diff / pendentes.length) * 100) / 100;
             for (const p of pendentes) {
-                await db.parcelas.update(p.id, { valor: p.valor + ajuste });
+                await db.parcelas.update(p.id, { valor: Math.round((p.valor + ajuste) * 100) / 100 });
             }
         }
+    }
+
+    // Check if all paid
+    const todasParcelas = await db.parcelas.where('vendaId').equals(parcela.vendaId).toArray();
+    if (todasParcelas.every(p => p.status === 'pago')) {
+        await db.vendas.update(parcela.vendaId, { status: 'quitada' });
     }
 
     closeModal();

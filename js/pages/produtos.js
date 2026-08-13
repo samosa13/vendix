@@ -11,14 +11,8 @@ async function renderProdutos() {
     const limite = configVal('estoqueMinimoAlerta') || 3;
     const baixos = produtos.filter(p => (p.estoque || 0) <= limite);
 
-    // Sort by category, then alphabetically within category
-    const categoriaOrder = ['panelas', 'eletro', 'cama_mesa', 'utilidades', 'outros'];
-    produtos.sort((a, b) => {
-        const catA = categoriaOrder.indexOf(a.categoria);
-        const catB = categoriaOrder.indexOf(b.categoria);
-        if (catA !== catB) return catA - catB;
-        return (a.nome || '').localeCompare(b.nome || '');
-    });
+    // Sort alphabetically
+    produtos.sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
 
     const content = document.getElementById('app-content');
     content.innerHTML = `

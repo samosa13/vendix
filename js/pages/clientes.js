@@ -7,16 +7,8 @@ async function renderClientes() {
     const todosComInativos = await db.clientes.toArray();
     const inativos = todosComInativos.filter(c => c.ativo === 0);
 
-    // Sort by city, then bairro, then name
-    clientes.sort((a, b) => {
-        const cidadeA = (a.cidade || '').toLowerCase();
-        const cidadeB = (b.cidade || '').toLowerCase();
-        if (cidadeA !== cidadeB) return cidadeA.localeCompare(cidadeB);
-        const bairroA = (a.bairro || '').toLowerCase();
-        const bairroB = (b.bairro || '').toLowerCase();
-        if (bairroA !== bairroB) return bairroA.localeCompare(bairroB);
-        return (a.nome || '').localeCompare(b.nome || '');
-    });
+    // Sort alphabetically
+    clientes.sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
 
     const content = document.getElementById('app-content');
     content.innerHTML = `
