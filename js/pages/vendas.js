@@ -20,11 +20,13 @@ async function renderVendas() {
         return;
     }
 
-    // Separate active vs quitadas
-    const ativas = vendas.filter(v => v.status !== 'quitada');
+    // Separate: active vendas, quitadas, and vendas of inactive clients
+    const clientesInativos = (await db.clientes.toArray()).filter(c => c.ativo === 0).map(c => c.id);
+    const ativas = vendas.filter(v => v.status !== 'quitada' && !clientesInativos.includes(v.clienteId));
+    const vendasClienteInativo = vendas.filter(v => v.status !== 'quitada' && clientesInativos.includes(v.clienteId));
     const quitadas = vendas.filter(v => v.status === 'quitada');
 
-    // Sort active by client city, then name
+    // Cache clients
     const clienteCache = {};
     for (const v of vendas) {
         if (!clienteCache[v.clienteId]) {
@@ -32,6 +34,7 @@ async function renderVendas() {
         }
     }
 
+    // Sort active by client city, then name
     ativas.sort((a, b) => {
         const cA = clienteCache[a.clienteId];
         const cB = clienteCache[b.clienteId];
@@ -43,10 +46,36 @@ async function renderVendas() {
         return nomeA.localeCompare(nomeB);
     });
 
-    // Render active vendas
     let listHTML = '';
-    for (const v of ativas) {
-        listHTML += await renderVendaItem(v, clienteCache[v.clienteId], false);
+
+    // Check if grouped mode
+    if (configVal('agruparVendasCliente')) {
+        // Group by client
+        const byClient = {};
+        for (const v of ativas) {
+            if (!byClient[v.clienteId]) byClient[v.clienteId] = [];
+            byClient[v.clienteId].push(v);
+        }
+
+        for (const [clienteId, vendasCliente] of Object.entries(byClient)) {
+            const cliente = clienteCache[clienteId];
+            const totalPendente = vendasCliente.reduce((s, v) => s + v.valorTotal, 0);
+            listHTML += `
+                <div class="list-item" onclick="abrirVendasAgrupadas(${clienteId})" style="flex-wrap: wrap;">
+                    <div class="item-icon">👤</div>
+                    <div class="item-info">
+                        <div class="item-name">${cliente ? cliente.nome : 'Cliente'}</div>
+                        <div class="item-detail">${vendasCliente.length} venda${vendasCliente.length > 1 ? 's' : ''} ativa${vendasCliente.length > 1 ? 's' : ''}</div>
+                    </div>
+                    <div class="item-value">${formatMoney(totalPendente)}</div>
+                </div>
+            `;
+        }
+    } else {
+        // Normal mode: one item per venda
+        for (const v of ativas) {
+            listHTML += await renderVendaItem(v, clienteCache[v.clienteId], false);
+        }
     }
 
     // Render quitadas (collapsed)
@@ -58,13 +87,23 @@ async function renderVendas() {
     content.innerHTML = `
         ${listHTML}
 
+        ${vendasClienteInativo.length > 0 ? `
+            <div class="collapse-toggle" onclick="toggleCollapse('vendas-cliente-inativo')">
+                <span style="color: var(--warning);">⚠️ Vendas de Clientes Inativos (${vendasClienteInativo.length})</span>
+                <span class="arrow">▼</span>
+            </div>
+            <div id="vendas-cliente-inativo" class="collapse-content hidden">
+                ${(await Promise.all(vendasClienteInativo.map(v => renderVendaItem(v, clienteCache[v.clienteId], true)))).join('')}
+            </div>
+        ` : ''}
+
         ${quitadas.length > 0 ? `
             <div class="collapse-toggle" onclick="toggleCollapse('vendas-quitadas')">
                 <span>✅ Quitadas (${quitadas.length})</span>
                 <span class="arrow">▼</span>
             </div>
             <div id="vendas-quitadas" class="collapse-content hidden">
-                ${quitadasHTML}
+                ${(await Promise.all(quitadas.map(v => renderVendaItem(v, clienteCache[v.clienteId], true)))).join('')}
             </div>
         ` : ''}
 
@@ -86,7 +125,7 @@ async function renderVendaItem(v, cliente, isQuitada) {
         <div class="list-item ${isQuitada ? 'quitada' : ''}" onclick="abrirDetalheVenda(${v.id})" style="flex-wrap: wrap;">
             <div class="item-icon">🛒</div>
             <div class="item-info">
-                <div class="item-name">${cliente ? cliente.nome : 'Cliente removido'}</div>
+                <div class="item-name">${cliente ? cliente.nome : 'Cliente desconhecido'}</div>
                 <div class="item-detail">
                     ${formatDate(v.data)} • ${v.tipo === 'vista' ? 'À vista' : v.numParcelas + 'x'}
                     ${v.descricao ? ' • ' + v.descricao : ''}
@@ -123,15 +162,17 @@ async function abrirFormVenda() {
 
         <div class="form-group">
             <label class="form-label">Cliente</label>
-            <select class="form-input" id="venda-cliente">
+            <input type="text" class="form-input" id="venda-cliente-search" placeholder="🔍 Buscar cliente..." oninput="filtrarSelectCliente()" autocomplete="off">
+            <select class="form-input" id="venda-cliente" style="margin-top: 4px;">
                 <option value="">Selecione o cliente</option>
-                ${clientes.map(c => `<option value="${c.id}">${c.nome}</option>`).join('')}
+                ${clientes.map(c => `<option value="${c.id}">${c.nome} — ${c.bairro || ''}, ${c.cidade || ''}</option>`).join('')}
             </select>
         </div>
 
         <div class="form-group">
             <label class="form-label">Produto (opcional)</label>
-            <select class="form-input" id="venda-produto" onchange="preencherPreco()">
+            <input type="text" class="form-input" id="venda-produto-search" placeholder="🔍 Buscar produto..." oninput="filtrarSelectProduto()" autocomplete="off">
+            <select class="form-input" id="venda-produto" onchange="preencherPreco()" style="margin-top: 4px;">
                 <option value="">-- Selecionar produto --</option>
                 ${produtos.map(p => {
                     const semEstoque = (p.estoque || 0) <= 0;
@@ -349,6 +390,14 @@ async function abrirDetalheVenda(id) {
             <div style="margin-top: 8px; font-size: 22px; font-weight: 800; color: var(--accent);">
                 ${formatMoney(venda.valorTotal)}
             </div>
+            ${venda.valorEntrada > 0 ? `
+                <div style="margin-top: 4px; font-size: 13px; color: var(--text-secondary);">
+                    Entrada: ${formatMoney(venda.valorEntrada)} (já pago)
+                </div>
+            ` : ''}
+            <div style="margin-top: 4px; font-size: 14px; font-weight: 700; color: var(--warning);">
+                Pendente: ${formatMoney(venda.valorTotal - (venda.valorEntrada || 0) - parcelas.filter(p => p.status === 'pago').reduce((s,p) => s + p.valor, 0))}
+            </div>
         </div>
 
         <div class="section-title">📋 Parcelas (${pagas}/${parcelas.length} pagas)</div>
@@ -454,8 +503,11 @@ async function abrirEditarVenda(id) {
                 <div class="form-group">
                     <label class="form-label">Nº Parcelas Total</label>
                     <select class="form-input" id="edit-venda-parcelas">
-                        ${[2,3,4,5,6,8,10,12].map(n => `<option value="${n}" ${n === venda.numParcelas ? 'selected' : ''}>${n}x</option>`).join('')}
+                        ${[2,3,4,5,6,8,10,12,15,18,24].map(n => `<option value="${n}" ${n === venda.numParcelas ? 'selected' : ''}>${n}x</option>`).join('')}
                     </select>
+                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+                        Aumente para adicionar mais parcelas (redistribui o pendente)
+                    </div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Juros % / mês</label>
@@ -497,7 +549,7 @@ async function salvarEdicaoVenda(id, tipo) {
     await editarVenda(id, changes);
     showToast('✅ Venda atualizada!');
     closeModal();
-    renderVendas();
+    abrirDetalheVenda(id);
 }
 
 // ============ CANCELAR VENDA ============
@@ -582,7 +634,7 @@ async function confirmarPagamentoValor(parcelaId, forma) {
         showToast('✅ Pagamento parcial registrado!');
     }
     closeModal();
-    renderVendas();
+    abrirDetalheVenda(parcela.vendaId);
 }
 
 
@@ -622,8 +674,9 @@ async function salvarNovaDataParcela(parcelaId) {
     const cascata = document.getElementById('cascata-check').checked;
     await editarDataParcela(parcelaId, novaData, cascata);
     showToast(cascata ? '✅ Datas atualizadas!' : '✅ Data atualizada!');
+    const parcela = await db.parcelas.get(parcelaId);
     closeModal();
-    renderVendas();
+    abrirDetalheVenda(parcela.vendaId);
 }
 
 // ============ COMPROVANTE WHATSAPP ============
@@ -642,8 +695,11 @@ async function enviarComprovante(vendaId) {
     texto += `*Produto:* ${venda.descricao || '-'}\n`;
     texto += `*Data:* ${formatDate(venda.data)}\n`;
     texto += `*Valor:* ${formatMoney(venda.valorTotal)}`;
+    if (venda.valorEntrada > 0) {
+        texto += `\n*Entrada:* ${formatMoney(venda.valorEntrada)} (já pago)`;
+    }
     if (venda.tipo === 'parcelado') {
-        texto += ` (${venda.numParcelas}x ${formatMoney(parcelas[0]?.valor || 0)})`;
+        texto += `\n*Parcelado:* ${venda.numParcelas}x ${formatMoney(parcelas[0]?.valor || 0)}`;
     } else {
         texto += ` (à vista)`;
     }
@@ -707,6 +763,101 @@ async function salvarNovoValorParcela(parcelaId) {
     }
     await editarValorParcela(parcelaId, novoValor);
     showToast('✅ Valores atualizados!');
+    const parcela = await db.parcelas.get(parcelaId);
     closeModal();
-    renderVendas();
+    abrirDetalheVenda(parcela.vendaId);
+}
+
+
+// Search filters for cliente/produto selects
+function filtrarSelectCliente() {
+    const search = document.getElementById('venda-cliente-search').value.toLowerCase();
+    const select = document.getElementById('venda-cliente');
+    for (const opt of select.options) {
+        if (opt.value === '') { opt.style.display = ''; continue; }
+        opt.style.display = opt.textContent.toLowerCase().includes(search) ? '' : 'none';
+    }
+}
+
+function filtrarSelectProduto() {
+    const search = document.getElementById('venda-produto-search').value.toLowerCase();
+    const select = document.getElementById('venda-produto');
+    for (const opt of select.options) {
+        if (opt.value === '') { opt.style.display = ''; continue; }
+        opt.style.display = opt.textContent.toLowerCase().includes(search) ? '' : 'none';
+    }
+}
+
+
+// Grouped vendas navigation
+async function abrirVendasAgrupadas(clienteId) {
+    const vendas = await getVendas();
+    const vendasCliente = vendas.filter(v => v.clienteId === parseInt(clienteId) && v.status !== 'quitada');
+    if (vendasCliente.length === 0) return;
+    window._vendasAgrupadas = vendasCliente;
+    window._vendaAgrupadaIdx = 0;
+    mostrarVendaAgrupada(0);
+}
+
+async function mostrarVendaAgrupada(idx) {
+    const vendas = window._vendasAgrupadas;
+    if (!vendas || idx < 0 || idx >= vendas.length) return;
+    window._vendaAgrupadaIdx = idx;
+    
+    // Open the venda detail with navigation arrows
+    const venda = vendas[idx];
+    const cliente = await getCliente(venda.clienteId);
+    const parcelas = await getParcelasByVenda(venda.id);
+    const pagas = parcelas.filter(p => p.status === 'pago').length;
+    const hoje = getToday();
+
+    const prevDisabled = idx === 0;
+    const nextDisabled = idx === vendas.length - 1;
+
+    openModal(`
+        <div class="modal-header">
+            <h2 class="modal-title">🛒 ${cliente ? cliente.nome : ''}</h2>
+            <button class="modal-close" onclick="closeModal()">✕</button>
+        </div>
+
+        <!-- Navigation arrows -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <button class="btn btn-ghost btn-sm" style="width: auto; opacity: ${prevDisabled ? '0.3' : '1'};" ${prevDisabled ? 'disabled' : ''} onclick="mostrarVendaAgrupada(${idx-1})">
+                ← Anterior
+            </button>
+            <span style="font-size: 12px; color: var(--text-secondary);">${idx+1} de ${vendas.length}</span>
+            <button class="btn btn-ghost btn-sm" style="width: auto; opacity: ${nextDisabled ? '0.3' : '1'};" ${nextDisabled ? 'disabled' : ''} onclick="mostrarVendaAgrupada(${idx+1})">
+                Próxima →
+            </button>
+        </div>
+
+        <div class="card">
+            ${venda.descricao ? `<div style="font-size: 14px; font-weight: 600;">${venda.descricao}</div>` : ''}
+            <div style="font-size: 13px; color: var(--text-secondary); margin-top: 4px;">
+                📅 ${formatDate(venda.data)} • ${venda.tipo === 'vista' ? 'À vista' : venda.numParcelas + 'x'}
+            </div>
+            <div style="margin-top: 8px; font-size: 20px; font-weight: 800; color: var(--accent);">
+                ${formatMoney(venda.valorTotal)}
+            </div>
+            ${venda.valorEntrada > 0 ? `<div style="font-size: 13px; color: var(--text-secondary);">Entrada: ${formatMoney(venda.valorEntrada)}</div>` : ''}
+        </div>
+
+        <div class="section-title">📋 Parcelas (${pagas}/${parcelas.length})</div>
+        ${parcelas.map(p => {
+            const isAtrasado = p.status === 'pendente' && p.dataVencimento < hoje;
+            const isParcial = p.status === 'parcial';
+            const statusIcon = p.status === 'pago' ? '✅' : (isParcial ? '🟠' : (isAtrasado ? '🔴' : '🟡'));
+            const restante = p.valor - (p.valorPago || 0);
+            return `
+                <div class="venda-item">
+                    <div style="flex:1;"><span style="font-weight:600;">${statusIcon} P${p.numero}</span> ${formatDate(p.dataVencimento)}</div>
+                    <div style="font-weight:700;">${formatMoney(p.status === 'pago' ? p.valor : restante)}</div>
+                </div>
+            `;
+        }).join('')}
+
+        <button class="btn btn-ghost mt-16" onclick="closeModal(); abrirDetalheVenda(${venda.id})">
+            Ver detalhes completos →
+        </button>
+    `);
 }

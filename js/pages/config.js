@@ -5,7 +5,7 @@
 // Default config values
 const CONFIG_DEFAULTS = {
     nomeNegocio: 'VendIX',
-    dddPadrao: '',
+    dddPadrao: '49',
     jurosPadrao: 0,
     parcelasPadrao: 4,
     estoqueMinimoAlerta: 2,
@@ -14,7 +14,8 @@ const CONFIG_DEFAULTS = {
     horaBackup: '23:59',
     frequenciaBackup: 'diario',
     autoBackup: true,
-    mostrarRotaMaps: true
+    mostrarRotaMaps: true,
+    agruparVendasCliente: false
 };
 
 // Load config from localStorage
@@ -146,6 +147,24 @@ function renderConfig() {
             </div>
         </div>
 
+        <!-- Agrupar vendas -->
+        <div class="card" style="margin-top: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <div style="font-weight: 600; font-size: 14px;">Agrupar vendas por cliente</div>
+                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                        Mostra 1 ficha por cliente com todas as vendas ativas
+                    </div>
+                </div>
+                <label style="position: relative; display: inline-block; width: 50px; height: 28px;">
+                    <input type="checkbox" id="cfg-agrupar" ${config.agruparVendasCliente ? 'checked' : ''} style="opacity:0;width:0;height:0;">
+                    <span style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:${config.agruparVendasCliente ? 'var(--accent)' : 'var(--border)'};border-radius:28px;transition:.3s;" onclick="this.previousElementSibling.checked=!this.previousElementSibling.checked; this.style.background=this.previousElementSibling.checked?'var(--accent)':'var(--border)'; this.querySelector('span').style.transform=this.previousElementSibling.checked?'translateX(22px)':'translateX(0)';">
+                        <span style="position:absolute;height:22px;width:22px;left:3px;bottom:3px;background:white;border-radius:50%;transition:.3s;transform:${config.agruparVendasCliente ? 'translateX(22px)' : 'translateX(0)'};"></span>
+                    </span>
+                </label>
+            </div>
+        </div>
+
         <!-- Backup -->
         <div class="section-title">💾 Backup dos Dados</div>
 
@@ -219,6 +238,7 @@ function salvarConfig() {
         horaBackup: document.getElementById('cfg-hora-backup').value || '23:59',
         frequenciaBackup: document.getElementById('cfg-freq-backup').value || 'diario',
         mostrarRotaMaps: document.getElementById('cfg-maps').checked,
+        agruparVendasCliente: document.getElementById('cfg-agrupar').checked,
         autoBackup: true,
         moeda: 'R$'
     };

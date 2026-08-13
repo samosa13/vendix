@@ -172,25 +172,20 @@ async function renderCobrancaCards(items, hoje) {
                         const diasAtraso = isAtrasado ? Math.abs(daysDiff(p.dataVencimento)) : 0;
                         const restante = p.valor - (p.valorPago || 0);
                         return `
-                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 0;">
-                                <div style="font-size: 13px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border);">
+                                <div style="font-size: 13px; flex: 1;">
                                     ${isAtrasado ? '🔴' : '🟡'} Parcela ${p.numero} • ${formatDate(p.dataVencimento)}
-                                    ${isAtrasado ? `<span style="color: var(--danger); font-size: 11px;"> (${diasAtraso}d atraso)</span>` : ''}
+                                    ${isAtrasado ? `<span style="color: var(--danger); font-size: 11px;"> (${diasAtraso}d)</span>` : ''}
                                     ${p.status === 'parcial' ? `<span style="color: var(--warning); font-size: 11px;"> (parcial)</span>` : ''}
                                 </div>
-                                <div style="font-weight: 700; font-size: 14px;">${formatMoney(restante)}</div>
+                                <div style="display: flex; align-items: center; gap: 6px;">
+                                    <span style="font-weight: 700; font-size: 13px;">${formatMoney(restante)}</span>
+                                    <button class="btn btn-accent btn-sm" style="padding:4px 8px; font-size:10px; width:auto;" onclick="pagarParcelaCobranca(${p.id})">Pix</button>
+                                    <button class="btn btn-ghost btn-sm" style="padding:4px 8px; font-size:10px; width:auto;" onclick="pagarParcelaCobranca(${p.id}, 'dinheiro')">💵</button>
+                                </div>
                             </div>
                         `;
                     }).join('')}
-                </div>
-
-                <div class="action-row" style="margin-top: 12px;">
-                    <button class="btn btn-accent btn-sm" onclick="pagarTodasCliente(${key}, 'pix')">
-                        ✅ Recebido Pix
-                    </button>
-                    <button class="btn btn-ghost btn-sm" onclick="pagarTodasCliente(${key}, 'dinheiro')">
-                        💵 Recebido Dinheiro
-                    </button>
                 </div>
             </div>
         `;
@@ -310,5 +305,94 @@ async function pagarTodasConfirm(clienteId, forma, todas) {
     }
 
     closeModal();
+    renderCobrancas();
+}
+
+
+// Pagar parcela individual from cobrancas with editable value
+async function pagarParcelaCobranca(parcelaId, forma = 'pix') {
+    const parcela = await db.parcelas.get(parcelaId);
+    const restante = parcela.valor - (parcela.valorPago || 0);
+
+    openModal(`
+        <div class="modal-header">
+            <h2 class="modal-title">💰 Registrar Pagamento</h2>
+            <button class="modal-close" onclick="closeModal()">✕</button>
+        </div>
+        <div style="margin-bottom: 12px;">
+            <div style="font-size: 13px; color: var(--text-secondary);">Parcela ${parcela.numero}</div>
+            <div style="font-size: 20px; font-weight: 800;">${formatMoney(restante)}</div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Valor recebido (R$)</label>
+            <input type="number" step="0.01" class="form-input" id="cob-pag-valor" value="${restante.toFixed(2)}" style="font-size: 18px; font-weight: 700;" inputmode="decimal">
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+                Se pagou menos, mude o valor. O resto será distribuído nas próximas parcelas.
+            </div>
+        </div>
+        <div class="action-row">
+            <button class="btn btn-accent" onclick="confirmarPagCobranca(${parcelaId}, 'pix')">📱 Pix</button>
+            <button class="btn btn-ghost" onclick="confirmarPagCobranca(${parcelaId}, 'dinheiro')">💵 Dinheiro</button>
+        </div>
+    `);
+}
+
+async function confirmarPagCobranca(parcelaId, forma) {
+    const parcela = await db.parcelas.get(parcelaId);
+    const restante = parcela.valor - (parcela.valorPago || 0);
+    const valorInput = parseFloat(document.getElementById('cob-pag-valor').value);
+
+    if (!valorInput || valorInput <= 0) {
+        showToast('Digite o valor!', true);
+        return;
+    }
+
+    // If different from expected, ask confirmation
+    if (Math.abs(valorInput - restante) > 0.01) {
+        const diff = restante - valorInput;
+        openModal(`
+            <div class="modal-header">
+                <h2 class="modal-title">⚠️ Confirmar</h2>
+                <button class="modal-close" onclick="closeModal()">✕</button>
+            </div>
+            <div style="text-align: center; padding: 16px 0;">
+                <p style="font-size: 14px;">O valor é diferente do esperado.</p>
+                <p style="font-size: 13px; color: var(--text-secondary); margin-top: 8px;">
+                    Esperado: <strong>${formatMoney(restante)}</strong><br>
+                    Recebido: <strong>${formatMoney(valorInput)}</strong><br>
+                    ${diff > 0 ? `Faltou: <strong class="text-danger">${formatMoney(diff)}</strong> (será distribuído nas próximas parcelas)` : ''}
+                </p>
+            </div>
+            <div class="confirm-actions">
+                <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+                <button class="btn btn-accent" onclick="executarPagCobranca(${parcelaId}, '${forma}', ${valorInput})">Confirmar</button>
+            </div>
+        `);
+    } else {
+        await executarPagCobranca(parcelaId, forma, valorInput);
+    }
+}
+
+async function executarPagCobranca(parcelaId, forma, valor) {
+    const parcela = await db.parcelas.get(parcelaId);
+    const restante = parcela.valor - (parcela.valorPago || 0);
+
+    await marcarParcelaPaga(parcelaId, forma, valor);
+
+    // If paid less, redistribute difference among remaining parcelas
+    if (valor < restante - 0.01) {
+        const diff = restante - valor;
+        const todasParcelas = await db.parcelas.where('vendaId').equals(parcela.vendaId).toArray();
+        const pendentes = todasParcelas.filter(p => p.id !== parcelaId && p.status !== 'pago');
+        if (pendentes.length > 0) {
+            const ajuste = Math.round((diff / pendentes.length) * 100) / 100;
+            for (const p of pendentes) {
+                await db.parcelas.update(p.id, { valor: p.valor + ajuste });
+            }
+        }
+    }
+
+    closeModal();
+    showToast('✅ Pagamento registrado!');
     renderCobrancas();
 }

@@ -238,8 +238,34 @@ async function salvarCliente(id) {
     if (id) {
         const ativo = document.getElementById('cli-ativo').checked ? 1 : 0;
         dados.ativo = ativo;
-        if (ativo === 0 && !dados.inativoDesde) dados.inativoDesde = getToday();
+
+        // If deactivating, check for pending vendas
+        if (ativo === 0) {
+            const vendasCliente = await getVendasByCliente(id);
+            const vendasAbertas = vendasCliente.filter(v => v.status === 'aberta');
+            if (vendasAbertas.length > 0) {
+                openModal(`
+                    <div class="modal-header">
+                        <h2 class="modal-title">⚠️ Atenção</h2>
+                        <button class="modal-close" onclick="closeModal()">✕</button>
+                    </div>
+                    <div style="padding: 12px 0; text-align: center;">
+                        <p style="font-size: 14px;">Este cliente tem <strong>${vendasAbertas.length} venda${vendasAbertas.length > 1 ? 's' : ''}</strong> pendente${vendasAbertas.length > 1 ? 's' : ''}.</p>
+                        <p style="font-size: 13px; color: var(--text-secondary); margin-top: 8px;">
+                            Ao inativar, as vendas ficarão na seção "Vendas de Clientes Inativos".
+                        </p>
+                    </div>
+                    <div class="confirm-actions">
+                        <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+                        <button class="btn btn-warning" onclick="confirmarInativarCliente(${id})">Inativar mesmo assim</button>
+                    </div>
+                `);
+                return;
+            }
+            dados.inativoDesde = getToday();
+        }
         if (ativo === 1) dados.inativoDesde = null;
+
         await updateCliente(id, dados);
         showToast('✅ Cliente atualizado!');
     } else {
@@ -258,4 +284,12 @@ function confirmarExcluirCliente(id) {
         closeModal();
         renderClientes();
     });
+}
+
+
+async function confirmarInativarCliente(id) {
+    await updateCliente(id, { ativo: 0, inativoDesde: getToday() });
+    showToast('✅ Cliente inativado!');
+    closeModal();
+    renderClientes();
 }
