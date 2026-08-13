@@ -268,11 +268,9 @@ function confirmarLimparDados() {
 }
 
 async function executarLimparDados() {
-    await db.produtos.clear();
-    await db.clientes.clear();
-    await db.vendas.clear();
-    await db.parcelas.clear();
-    await db.pagamentos.clear();
+    // Delete and recreate DB to reset auto-increment IDs
+    await db.delete();
+    await db.open();
     localStorage.removeItem('vendix_last_backup');
     localStorage.removeItem('vendix_first_use');
     closeModal();
