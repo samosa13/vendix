@@ -69,6 +69,7 @@ async function addVenda(venda, parcelas) {
     // venda: { clienteId, data, itens, valorTotal, tipo, numParcelas, taxaJuros, valorEntrada }
     venda.criadoEm = new Date().toISOString();
     venda.status = 'aberta'; // aberta, quitada, cancelada
+    venda.numParcelasOriginal = venda.numParcelas; // Never modified — for original comprovante
 
     const vendaId = await db.vendas.add(venda);
 

@@ -1030,6 +1030,9 @@ async function enviarComprovanteOriginal(vendaId) {
     const venda = await getVenda(vendaId);
     const cliente = await getCliente(venda.clienteId);
 
+    // Use original parcela count (before any extensions)
+    const numOriginal = venda.numParcelasOriginal || venda.numParcelas;
+
     let texto = `🧾 *COMPROVANTE DE COMPRA*\n`;
     texto += `━━━━━━━━━━━━━━━━━━\n`;
     texto += `*Cliente:* ${cliente ? cliente.nome : '-'}\n`;
@@ -1040,8 +1043,8 @@ async function enviarComprovanteOriginal(vendaId) {
         texto += `*Entrada:* ${formatMoney(venda.valorEntrada)}\n`;
     }
     if (venda.tipo === 'parcelado') {
-        const valorParcela = (venda.valorTotal - (venda.valorEntrada || 0)) / (venda.numParcelas || 1);
-        texto += `*Condição:* ${venda.numParcelas}x ${formatMoney(valorParcela)}`;
+        const valorParcela = (venda.valorTotal - (venda.valorEntrada || 0)) / numOriginal;
+        texto += `*Condição:* ${numOriginal}x ${formatMoney(valorParcela)}`;
         if (venda.taxaJuros > 0) texto += ` (${venda.taxaJuros}% a.m.)`;
         texto += `\n`;
     } else {
