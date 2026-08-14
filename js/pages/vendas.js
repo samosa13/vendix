@@ -125,10 +125,14 @@ async function renderVendaItem(v, cliente, isQuitada) {
     const total = parcelas.length;
     const progress = total > 0 ? (pagas / total) * 100 : 0;
 
+    // Calculate pending for incompleta
+    const totalPago = parcelas.filter(p => p.status === 'pago').reduce((s, p) => s + (p.valorPago || p.valor), 0) + (v.valorEntrada || 0);
+    const pendente = v.valorTotal - totalPago;
+
     const statusBadge = v.status === 'quitada'
         ? '<span class="badge badge-green">QUITADA</span>'
         : v.status === 'incompleta'
-        ? '<span class="badge" style="background:var(--danger);color:#fff;">INCOMPLETA</span>'
+        ? `<span class="badge" style="background:var(--danger);color:#fff;">PEND ${formatMoney(pendente)}</span>`
         : `<span class="badge badge-orange">${pagas}/${total}</span>`;
 
     return `
@@ -503,10 +507,10 @@ async function abrirDetalheVenda(id) {
                             <div style="display: flex; gap: 4px; margin-top: 4px; justify-content: flex-end;">
                                 <button class="btn btn-accent btn-sm" style="padding: 6px 10px; font-size: 11px; width: auto;${!canPay ? ' opacity:0.4; pointer-events:none;' : ''}" 
                                     onclick="pagarParcelaVenda(${p.id})" ${!canPay ? 'disabled' : ''}>Pagar</button>
-                                <button class="btn btn-ghost btn-sm" style="padding: 6px 10px; font-size: 11px; width: auto;" 
-                                    onclick="editarValorParcelaUI(${p.id}, ${restante}, ${id})">✏️</button>
-                                <button class="btn btn-ghost btn-sm" style="padding: 6px 10px; font-size: 11px; width: auto;" 
-                                    onclick="editarDataParcelaUI(${p.id}, '${p.dataVencimento}', ${id})">📅</button>
+                                <button class="btn btn-ghost btn-sm" style="padding: 6px 10px; font-size: 11px; width: auto;${!canPay ? ' opacity:0.4; pointer-events:none;' : ''}" 
+                                    onclick="editarValorParcelaUI(${p.id}, ${restante}, ${id})" ${!canPay ? 'disabled' : ''}>✏️</button>
+                                <button class="btn btn-ghost btn-sm" style="padding: 6px 10px; font-size: 11px; width: auto;${!canPay ? ' opacity:0.4; pointer-events:none;' : ''}" 
+                                    onclick="editarDataParcelaUI(${p.id}, '${p.dataVencimento}', ${id})" ${!canPay ? 'disabled' : ''}>📅</button>
                             </div>
                         ` : ''}
                         ${p.status === 'pago' && isQuitada ? `
