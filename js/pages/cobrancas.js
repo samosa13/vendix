@@ -171,6 +171,9 @@ async function renderCobrancaCards(items, hoje) {
                         const isAtrasado = p.dataVencimento < hoje;
                         const diasAtraso = isAtrasado ? Math.abs(daysDiff(p.dataVencimento)) : 0;
                         const restante = p.valor - (p.valorPago || 0);
+                        // Check if earlier parcelas of same venda are unpaid
+                        const hasEarlierUnpaid = parcelas.some(pp => pp.vendaId === p.vendaId && pp.numero < p.numero && pp.status !== 'pago');
+                        const canPay = !hasEarlierUnpaid;
                         return `
                             <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); cursor: pointer;" onclick="if(!event.target.closest('button')){closeModal();navigateTo('vendas');setTimeout(()=>abrirDetalheVenda(${p.vendaId}),300);}">
                                 <div style="font-size: 13px; flex: 1;">
@@ -180,8 +183,8 @@ async function renderCobrancaCards(items, hoje) {
                                 </div>
                                 <div style="display: flex; align-items: center; gap: 6px;">
                                     <span style="font-weight: 700; font-size: 13px;">${formatMoney(restante)}</span>
-                                    <button class="btn btn-accent btn-sm" style="padding:4px 8px; font-size:10px; width:auto;" onclick="event.stopPropagation();pagarParcelaCobranca(${p.id})">Pix</button>
-                                    <button class="btn btn-ghost btn-sm" style="padding:4px 8px; font-size:10px; width:auto;" onclick="event.stopPropagation();pagarParcelaCobranca(${p.id}, 'dinheiro')">💵</button>
+                                    <button class="btn btn-accent btn-sm" style="padding:4px 8px; font-size:10px; width:auto;${!canPay ? ' opacity:0.4; pointer-events:none;' : ''}" onclick="event.stopPropagation();pagarParcelaCobranca(${p.id})" ${!canPay ? 'disabled' : ''}>Pix</button>
+                                    <button class="btn btn-ghost btn-sm" style="padding:4px 8px; font-size:10px; width:auto;${!canPay ? ' opacity:0.4; pointer-events:none;' : ''}" onclick="event.stopPropagation();pagarParcelaCobranca(${p.id}, 'dinheiro')" ${!canPay ? 'disabled' : ''}>💵</button>
                                 </div>
                             </div>
                         `;

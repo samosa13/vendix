@@ -20,10 +20,11 @@ async function renderVendas() {
         return;
     }
 
-setInterval    // Separate: active vendas, quitadas, and vendas of inactive clients
+setInterval    // Separate: active vendas, quitadas, incompletas, and vendas of inactive clients
     const clientesInativos = (await db.clientes.toArray()).filter(c => c.ativo === 0).map(c => c.id);
-    const ativas = vendas.filter(v => v.status !== 'quitada' && !clientesInativos.includes(v.clienteId));
-    const vendasClienteInativo = vendas.filter(v => v.status !== 'quitada' && clientesInativos.includes(v.clienteId));
+    const ativas = vendas.filter(v => v.status !== 'quitada' && v.status !== 'incompleta' && !clientesInativos.includes(v.clienteId));
+    const incompletas = vendas.filter(v => v.status === 'incompleta');
+    const vendasClienteInativo = vendas.filter(v => v.status !== 'quitada' && v.status !== 'incompleta' && clientesInativos.includes(v.clienteId));
     const quitadas = vendas.filter(v => v.status === 'quitada');
 
     // Sort by date (most recent first by default)
@@ -91,6 +92,16 @@ setInterval    // Separate: active vendas, quitadas, and vendas of inactive clie
             </div>
             <div id="vendas-cliente-inativo" class="collapse-content hidden">
                 ${configVal('agruparVendasCliente') ? await renderVendasAgrupadasHTML(vendasClienteInativo, clienteCache) : (await Promise.all(vendasClienteInativo.map(v => renderVendaItem(v, clienteCache[v.clienteId], true)))).join('')}
+            </div>
+        ` : ''}
+
+        ${incompletas.length > 0 ? `
+            <div class="collapse-toggle" onclick="toggleCollapse('vendas-incompletas')">
+                <span style="color: var(--danger);">🚫 Finalizadas Incompletas (${incompletas.length})</span>
+                <span class="arrow">▼</span>
+            </div>
+            <div id="vendas-incompletas" class="collapse-content hidden">
+                ${(await Promise.all(incompletas.map(v => renderVendaItem(v, clienteCache[v.clienteId], true)))).join('')}
             </div>
         ` : ''}
 
@@ -461,13 +472,16 @@ async function abrirDetalheVenda(id) {
             </div>
         ` : ''}
 
-        ${parcelas.map(p => {
+        ${parcelas.map((p, idx) => {
             const isAtrasado = p.status === 'pendente' && p.dataVencimento < hoje;
             const isParcial = p.status === 'parcial';
             const statusIcon = p.status === 'pago' ? '✅' : (isParcial ? '🟠' : (isAtrasado ? '🔴' : '🟡'));
             const restante = p.valor - (p.valorPago || 0);
             const pagouMenos = p.status === 'pago' && p.valorPago && p.valorPago < p.valor - 0.01;
             const isQuitada = venda.status === 'quitada';
+            // Check if there are earlier unpaid parcelas (must pay in order)
+            const hasEarlierUnpaid = parcelas.some(pp => pp.numero < p.numero && pp.status !== 'pago');
+            const canPay = !hasEarlierUnpaid;
 
             return `
                 <div class="venda-item">
@@ -487,8 +501,8 @@ async function abrirDetalheVenda(id) {
                         ${pagouMenos ? `<div style="font-size: 10px; color: var(--text-muted); text-decoration: line-through;">${formatMoney(p.valor)}</div>` : ''}
                         ${p.status !== 'pago' && !isQuitada ? `
                             <div style="display: flex; gap: 4px; margin-top: 4px; justify-content: flex-end;">
-                                <button class="btn btn-accent btn-sm" style="padding: 6px 10px; font-size: 11px; width: auto;" 
-                                    onclick="pagarParcelaVenda(${p.id})">Pagar</button>
+                                <button class="btn btn-accent btn-sm" style="padding: 6px 10px; font-size: 11px; width: auto;${!canPay ? ' opacity:0.4; pointer-events:none;' : ''}" 
+                                    onclick="pagarParcelaVenda(${p.id})" ${!canPay ? 'disabled' : ''}>Pagar</button>
                                 <button class="btn btn-ghost btn-sm" style="padding: 6px 10px; font-size: 11px; width: auto;" 
                                     onclick="editarValorParcelaUI(${p.id}, ${restante}, ${id})">✏️</button>
                                 <button class="btn btn-ghost btn-sm" style="padding: 6px 10px; font-size: 11px; width: auto;" 
