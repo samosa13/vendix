@@ -794,6 +794,8 @@ async function executarPagamentoVenda(parcelaId, forma, valor) {
 
     showToast('✅ Pagamento registrado!');
     closeModal();
+    // Re-render vendas list first, then open detail on top
+    await renderVendas();
     abrirDetalheVenda(vendaId);
 }
 
@@ -854,6 +856,7 @@ async function executarAmpliarParcelas(vendaId, parcelaId, forma, valorPago, pen
 
     showToast(`✅ ${numNovas} parcela${numNovas > 1 ? 's' : ''} adicionada${numNovas > 1 ? 's' : ''}!`);
     closeModal();
+    await renderVendas();
     abrirDetalheVenda(vendaId);
 }
 
@@ -863,6 +866,7 @@ async function fecharVendaDefinitivo(vendaId) {
     await db.vendas.update(vendaId, { status: 'quitada' });
     showToast('✅ Venda encerrada como quitada');
     closeModal();
+    await renderVendas();
     abrirDetalheVenda(vendaId);
 }
 
@@ -931,6 +935,7 @@ async function executarAmpliarManual(vendaId, pendente) {
 
     showToast(`✅ ${numNovas} parcela${numNovas > 1 ? 's' : ''} criada${numNovas > 1 ? 's' : ''}!`);
     closeModal();
+    await renderVendas();
     abrirDetalheVenda(vendaId);
 }
 
@@ -968,6 +973,7 @@ async function executarDesfazerPagamento(parcelaId, vendaId) {
     await db.vendas.update(vendaId, { status: 'ativa' });
     showToast('↩️ Pagamento desfeito');
     closeModal();
+    await renderVendas();
     abrirDetalheVenda(vendaId);
 }
 
