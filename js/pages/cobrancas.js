@@ -313,6 +313,7 @@ async function pagarTodasConfirm(clienteId, forma, todas) {
 async function pagarParcelaCobranca(parcelaId, forma = 'pix') {
     const parcela = await db.parcelas.get(parcelaId);
     const restante = parcela.valor - (parcela.valorPago || 0);
+    const formaLabel = forma === 'pix' ? '📱 Pix' : '💵 Dinheiro';
 
     openModal(`
         <div class="modal-header">
@@ -320,7 +321,7 @@ async function pagarParcelaCobranca(parcelaId, forma = 'pix') {
             <button class="modal-close" onclick="closeModal()">✕</button>
         </div>
         <div style="margin-bottom: 12px;">
-            <div style="font-size: 13px; color: var(--text-secondary);">Parcela ${parcela.numero}</div>
+            <div style="font-size: 13px; color: var(--text-secondary);">Parcela ${parcela.numero} • ${formaLabel}</div>
             <div style="font-size: 20px; font-weight: 800;">${formatMoney(restante)}</div>
         </div>
         <div class="form-group">
@@ -330,10 +331,9 @@ async function pagarParcelaCobranca(parcelaId, forma = 'pix') {
                 Se pagou menos, mude o valor. O resto será distribuído nas próximas parcelas.
             </div>
         </div>
-        <div class="action-row">
-            <button class="btn btn-accent" onclick="confirmarPagCobranca(${parcelaId}, 'pix')">📱 Pix</button>
-            <button class="btn btn-ghost" onclick="confirmarPagCobranca(${parcelaId}, 'dinheiro')">💵 Dinheiro</button>
-        </div>
+        <button class="btn btn-accent" style="width: 100%;" onclick="confirmarPagCobranca(${parcelaId}, '${forma}')">
+            ✅ Confirmar ${formaLabel}
+        </button>
     `);
 }
 
@@ -435,7 +435,11 @@ async function executarAmpliarParcelasCobranca(vendaId, parcelaId, forma, valorP
     // 1. Pay current parcela
     await marcarParcelaPaga(parcelaId, forma, valorPago);
 
-    // 2. Create new parcelas
+    // 2. Get current max parcela number
+    const existingParcelas = await db.parcelas.where('vendaId').equals(vendaId).toArray();
+    const maxNumero = Math.max(...existingParcelas.map(p => p.numero));
+
+    // 3. Create new parcelas
     const valorCada = Math.round((pendente / numNovas) * 100) / 100;
     const hoje = new Date();
     const venda = await db.vendas.get(vendaId);
@@ -445,7 +449,7 @@ async function executarAmpliarParcelasCobranca(vendaId, parcelaId, forma, valorP
         await db.parcelas.add({
             vendaId: vendaId,
             clienteId: venda.clienteId,
-            numero: 900 + i,
+            numero: maxNumero + i,
             valor: valorCada,
             valorPago: 0,
             dataVencimento: venc.toISOString().split('T')[0],

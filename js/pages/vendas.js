@@ -415,6 +415,7 @@ async function abrirDetalheVenda(id) {
 
     const cliente = await getCliente(venda.clienteId);
     const parcelas = await getParcelasByVenda(id);
+    parcelas.sort((a, b) => a.numero - b.numero);
 
     const pagas = parcelas.filter(p => p.status === 'pago').length;
     const hoje = getToday();
@@ -807,7 +808,11 @@ async function executarAmpliarParcelas(vendaId, parcelaId, forma, valorPago, pen
     // 1. Pay current (last) parcela with the amount received
     await marcarParcelaPaga(parcelaId, forma, valorPago);
 
-    // 2. Create new parcelas for the pending amount
+    // 2. Get current max parcela number for this venda
+    const existingParcelas = await db.parcelas.where('vendaId').equals(vendaId).toArray();
+    const maxNumero = Math.max(...existingParcelas.map(p => p.numero));
+
+    // 3. Create new parcelas for the pending amount
     const valorCada = Math.round((pendente / numNovas) * 100) / 100;
     const hoje = new Date();
     for (let i = 1; i <= numNovas; i++) {
@@ -816,7 +821,7 @@ async function executarAmpliarParcelas(vendaId, parcelaId, forma, valorPago, pen
         await db.parcelas.add({
             vendaId: vendaId,
             clienteId: (await db.vendas.get(vendaId)).clienteId,
-            numero: 900 + i, // High number to not conflict
+            numero: maxNumero + i,
             valor: valorCada,
             valorPago: 0,
             dataVencimento: venc.toISOString().split('T')[0],
@@ -885,13 +890,17 @@ async function executarAmpliarManual(vendaId, pendente) {
     const hoje = new Date();
     const venda = await db.vendas.get(vendaId);
 
+    // Get current max parcela number
+    const existingParcelas = await db.parcelas.where('vendaId').equals(vendaId).toArray();
+    const maxNumero = Math.max(...existingParcelas.map(p => p.numero));
+
     for (let i = 1; i <= numNovas; i++) {
         const venc = new Date(hoje);
         venc.setMonth(venc.getMonth() + i);
         await db.parcelas.add({
             vendaId: vendaId,
             clienteId: venda.clienteId,
-            numero: 900 + i,
+            numero: maxNumero + i,
             valor: valorCada,
             valorPago: 0,
             dataVencimento: venc.toISOString().split('T')[0],
@@ -1020,29 +1029,23 @@ async function enviarComprovante(vendaId) {
 async function enviarComprovanteOriginal(vendaId) {
     const venda = await getVenda(vendaId);
     const cliente = await getCliente(venda.clienteId);
-    const parcelas = await getParcelasByVenda(vendaId);
 
     let texto = `🧾 *COMPROVANTE DE COMPRA*\n`;
     texto += `━━━━━━━━━━━━━━━━━━\n`;
     texto += `*Cliente:* ${cliente ? cliente.nome : '-'}\n`;
     texto += `*Produto:* ${venda.descricao || '-'}\n`;
     texto += `*Data:* ${formatDate(venda.data)}\n`;
-    texto += `*Valor:* ${formatMoney(venda.valorTotal)}`;
+    texto += `*Valor Total:* ${formatMoney(venda.valorTotal)}\n`;
     if (venda.valorEntrada > 0) {
-        texto += `\n*Entrada:* ${formatMoney(venda.valorEntrada)} (já pago)`;
+        texto += `*Entrada:* ${formatMoney(venda.valorEntrada)}\n`;
     }
     if (venda.tipo === 'parcelado') {
-        texto += `\n*Parcelado:* ${venda.numParcelas}x`;
+        const valorParcela = (venda.valorTotal - (venda.valorEntrada || 0)) / (venda.numParcelas || 1);
+        texto += `*Condição:* ${venda.numParcelas}x ${formatMoney(valorParcela)}`;
+        if (venda.taxaJuros > 0) texto += ` (${venda.taxaJuros}% a.m.)`;
+        texto += `\n`;
     } else {
-        texto += ` (à vista)`;
-    }
-    texto += `\n`;
-
-    if (venda.tipo === 'parcelado') {
-        texto += `\n📅 *PARCELAS:*\n`;
-        for (const p of parcelas) {
-            texto += `⬜ ${p.numero}ª - ${formatDate(p.dataVencimento)} - ${formatMoney(p.valor)}\n`;
-        }
+        texto += `*Condição:* À vista\n`;
     }
     texto += `\nObrigado pela preferência! 🙏`;
 
@@ -1054,6 +1057,9 @@ async function enviarComprovanteAtual(vendaId) {
     const venda = await getVenda(vendaId);
     const cliente = await getCliente(venda.clienteId);
     const parcelas = await getParcelasByVenda(vendaId);
+
+    // Sort parcelas by numero
+    parcelas.sort((a, b) => a.numero - b.numero);
 
     const totalPago = parcelas.filter(p => p.status === 'pago').reduce((s, p) => s + (p.valorPago || p.valor), 0) + (venda.valorEntrada || 0);
     const pendente = venda.valorTotal - totalPago;
@@ -1075,7 +1081,7 @@ async function enviarComprovanteAtual(vendaId) {
         texto += `${statusEmoji} ${p.numero}ª - ${formatDate(p.dataVencimento)} - ${formatMoney(p.valor)}`;
         if (p.status === 'pago') {
             const pagouMenos = p.valorPago && p.valorPago < p.valor - 0.01;
-            texto += pagouMenos ? ` (pago ${formatMoney(p.valorPago)})` : ' (pago)';
+            texto += pagouMenos ? ` (pago ${formatMoney(p.valorPago)})` : ' ✓';
         }
         texto += `\n`;
     }
