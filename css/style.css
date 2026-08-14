@@ -786,7 +786,6 @@ textarea.form-input {
     align-items: center;
     justify-content: space-between;
     padding: 10px 16px;
-    padding-right: 72px;
     background: var(--bg-input);
     border-radius: var(--radius-sm);
     margin: 12px 0 8px 0;
@@ -794,8 +793,6 @@ textarea.form-input {
     font-size: 13px;
     font-weight: 600;
     color: var(--text-secondary);
-    position: relative;
-    z-index: 51;
 }
 
 .collapse-toggle .arrow {
@@ -808,6 +805,43 @@ textarea.form-input {
 
 .collapse-content.hidden {
     display: none;
+}
+
+/* Custom Search Dropdown */
+.search-dropdown {
+    position: relative;
+}
+
+.dropdown-list {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    max-height: 200px;
+    overflow-y: auto;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-top: none;
+    border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+    z-index: 200;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.dropdown-item {
+    padding: 10px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+}
+
+.dropdown-item:last-child {
+    border-bottom: none;
+}
+
+.dropdown-item:active,
+.dropdown-item:hover {
+    background: var(--bg-input);
 }
 
 /* Venda quitada (paid - dimmed) */

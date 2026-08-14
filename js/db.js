@@ -262,7 +262,7 @@ async function marcarParcelaPaga(parcelaId, formaPagamento, valorRecebido = null
     // ALWAYS close the parcela as paid
     await db.parcelas.update(parcelaId, {
         status: 'pago',
-        valorPago: valorTotal,
+        valorPago: jaPago + valorEfetivo,
         dataPagamento: new Date().toISOString().split('T')[0],
         formaPagamento: formaPagamento
     });

@@ -159,19 +159,23 @@ async function abrirFormVenda() {
 
         <div class="form-group">
             <label class="form-label">Cliente</label>
-            <input type="text" class="form-input" id="venda-cliente-input" list="clientes-datalist" placeholder="🔍 Digitar nome do cliente..." autocomplete="off">
-            <datalist id="clientes-datalist">
-                ${clientes.map(c => `<option value="${c.nome}" data-id="${c.id}">${c.bairro || ''}, ${c.cidade || ''}</option>`).join('')}
-            </datalist>
+            <div class="search-dropdown" id="cliente-dropdown">
+                <input type="text" class="form-input" id="venda-cliente-input" placeholder="🔍 Digitar nome do cliente..." autocomplete="off" oninput="filtrarDropdown('cliente')" onfocus="filtrarDropdown('cliente')">
+                <div class="dropdown-list" id="cliente-dropdown-list">
+                    ${clientes.map(c => `<div class="dropdown-item" data-id="${c.id}" onclick="selecionarDropdown('cliente', ${c.id}, '${c.nome.replace(/'/g,"\\'")}')"><strong>${c.nome}</strong><span style="font-size:11px; color:var(--text-muted);"> ${c.bairro || ''}, ${c.cidade || ''}</span></div>`).join('')}
+                </div>
+            </div>
             <input type="hidden" id="venda-cliente" value="">
         </div>
 
         <div class="form-group">
             <label class="form-label">Produto (opcional)</label>
-            <input type="text" class="form-input" id="venda-produto-input" list="produtos-datalist" placeholder="🔍 Digitar nome do produto..." autocomplete="off" oninput="selecionarProdutoDatalist()">
-            <datalist id="produtos-datalist">
-                ${produtos.filter(p => p.ativo !== 0 && (p.estoque || 0) > 0).map(p => `<option value="${p.nome}" data-id="${p.id}" data-vista="${p.precoVista}" data-prazo="${p.precoPrazo}">${p.nome} (Est: ${p.estoque})</option>`).join('')}
-            </datalist>
+            <div class="search-dropdown" id="produto-dropdown">
+                <input type="text" class="form-input" id="venda-produto-input" placeholder="🔍 Digitar nome do produto..." autocomplete="off" oninput="filtrarDropdown('produto')" onfocus="filtrarDropdown('produto')">
+                <div class="dropdown-list" id="produto-dropdown-list">
+                    ${produtos.filter(p => p.ativo !== 0 && (p.estoque || 0) > 0).map(p => `<div class="dropdown-item" data-id="${p.id}" data-vista="${p.precoVista}" data-prazo="${p.precoPrazo}" data-nome="${p.nome.replace(/"/g,'&quot;')}" onclick="selecionarDropdownProduto(${p.id}, '${p.nome.replace(/'/g,"\\'")}', ${p.precoVista}, ${p.precoPrazo})"><strong>${p.nome}</strong><span style="font-size:11px; color:var(--text-muted);"> Est: ${p.estoque}</span></div>`).join('')}
+                </div>
+            </div>
             <input type="hidden" id="venda-produto" value="">
         </div>
 
@@ -222,7 +226,7 @@ async function abrirFormVenda() {
     window._tipoVenda = 'parcelado';
 }
 
-// selectTipoVenda also updates product price from datalist
+// selectTipoVenda updates price when switching vista/parcelado
 function selectTipoVenda(tipo) {
     window._tipoVenda = tipo;
     document.getElementById('tab-vista').classList.toggle('active', tipo === 'vista');
@@ -230,29 +234,74 @@ function selectTipoVenda(tipo) {
     document.getElementById('opcoes-parcelado').style.display = tipo === 'parcelado' ? 'block' : 'none';
 
     // Update price if product is selected
-    selecionarProdutoDatalist();
+    const produtoId = document.getElementById('venda-produto').value;
+    if (produtoId) {
+        const item = document.querySelector(`#produto-dropdown-list .dropdown-item[data-id="${produtoId}"]`);
+        if (item) {
+            const preco = tipo === 'vista' ? item.dataset.vista : item.dataset.prazo;
+            if (preco) document.getElementById('venda-valor').value = preco;
+        }
+    }
+    calcularPreview();
 }
 
 function preencherPreco() {
-    selecionarProdutoDatalist();
+    // Legacy - no longer used with custom dropdown
 }
 
-function selecionarProdutoDatalist() {
-    const input = document.getElementById('venda-produto-input');
-    const datalist = document.getElementById('produtos-datalist');
-    const options = datalist.querySelectorAll('option');
-    for (const opt of options) {
-        if (opt.value === input.value) {
-            const tipo = window._tipoVenda;
-            const preco = tipo === 'vista' ? opt.dataset.vista : opt.dataset.prazo;
-            if (preco) document.getElementById('venda-valor').value = preco;
-            document.getElementById('venda-descricao').value = opt.value;
-            document.getElementById('venda-produto').value = opt.dataset.id;
-            calcularPreview();
-            break;
-        }
-    }
+// ============ CUSTOM SEARCH DROPDOWN ============
+
+function filtrarDropdown(tipo) {
+    const input = document.getElementById(`venda-${tipo}-input`);
+    const list = document.getElementById(`${tipo}-dropdown-list`);
+    const term = input.value.toLowerCase().trim();
+    const items = list.querySelectorAll('.dropdown-item');
+    let visibleCount = 0;
+
+    items.forEach(item => {
+        const text = item.textContent.toLowerCase();
+        const match = !term || text.includes(term);
+        item.style.display = match ? 'block' : 'none';
+        if (match) visibleCount++;
+    });
+
+    list.style.display = visibleCount > 0 ? 'block' : 'none';
 }
+
+function selecionarDropdown(tipo, id, nome) {
+    const input = document.getElementById(`venda-${tipo}-input`);
+    const hidden = document.getElementById(`venda-${tipo}`);
+    const list = document.getElementById(`${tipo}-dropdown-list`);
+    input.value = nome;
+    hidden.value = id;
+    list.style.display = 'none';
+}
+
+function selecionarDropdownProduto(id, nome, precoVista, precoPrazo) {
+    const input = document.getElementById('venda-produto-input');
+    const hidden = document.getElementById('venda-produto');
+    const list = document.getElementById('produto-dropdown-list');
+    input.value = nome;
+    hidden.value = id;
+    list.style.display = 'none';
+
+    // Fill price based on venda type
+    const tipo = window._tipoVenda;
+    const preco = tipo === 'vista' ? precoVista : precoPrazo;
+    if (preco) document.getElementById('venda-valor').value = preco;
+    document.getElementById('venda-descricao').value = nome;
+    calcularPreview();
+}
+
+// Close dropdowns on outside click
+document.addEventListener('click', function(e) {
+    const dropdowns = document.querySelectorAll('.dropdown-list');
+    dropdowns.forEach(d => {
+        if (!d.parentElement.contains(e.target)) {
+            d.style.display = 'none';
+        }
+    });
+});
 
 function calcularPreview() {
     const valor = parseFloat(document.getElementById('venda-valor').value) || 0;
@@ -287,15 +336,12 @@ function calcularPreview() {
 }
 
 async function salvarVenda() {
-    // Resolve client from datalist input
-    const clienteInput = document.getElementById('venda-cliente-input').value.trim();
-    const clientes = await getClientes();
-    const clienteMatch = clientes.find(c => c.nome.toLowerCase() === clienteInput.toLowerCase());
-    if (!clienteMatch) {
-        showToast('Selecione um cliente válido!', true);
+    // Get client from hidden field (set by dropdown selection)
+    const clienteId = parseInt(document.getElementById('venda-cliente').value);
+    if (!clienteId) {
+        showToast('Selecione um cliente!', true);
         return;
     }
-    const clienteId = clienteMatch.id;
 
     const valor = parseFloat(document.getElementById('venda-valor').value);
     if (!valor || valor <= 0) {
@@ -306,11 +352,12 @@ async function salvarVenda() {
     const tipo = window._tipoVenda;
     const descricao = document.getElementById('venda-descricao').value.trim();
 
-    // Get produto info from datalist
-    const produtoInput = document.getElementById('venda-produto-input').value.trim();
-    const allProdutos = await db.produtos.toArray();
-    const produtoMatch = produtoInput ? allProdutos.find(p => p.nome.toLowerCase() === produtoInput.toLowerCase() && p.ativo !== 0) : null;
-    const produtoId = produtoMatch ? produtoMatch.id : null;
+    // Get produto from hidden field
+    const produtoId = parseInt(document.getElementById('venda-produto').value) || null;
+    let produtoMatch = null;
+    if (produtoId) {
+        produtoMatch = await db.produtos.get(produtoId);
+    }
 
     // Check stock availability
     if (produtoMatch && (produtoMatch.estoque || 0) <= 0) {
@@ -393,7 +440,7 @@ async function abrirDetalheVenda(id) {
                 </div>
             ` : ''}
             <div style="margin-top: 4px; font-size: 14px; font-weight: 700; color: var(--warning);">
-                Pendente: ${formatMoney(venda.valorTotal - (venda.valorEntrada || 0) - parcelas.filter(p => p.status === 'pago').reduce((s,p) => s + p.valor, 0))}
+                Pendente: ${formatMoney(venda.valorTotal - (venda.valorEntrada || 0) - parcelas.filter(p => p.status === 'pago').reduce((s,p) => s + (p.valorPago || p.valor), 0))}
             </div>
         </div>
 
@@ -404,6 +451,7 @@ async function abrirDetalheVenda(id) {
             const isParcial = p.status === 'parcial';
             const statusIcon = p.status === 'pago' ? '✅' : (isParcial ? '🟠' : (isAtrasado ? '🔴' : '🟡'));
             const restante = p.valor - (p.valorPago || 0);
+            const pagouMenos = p.status === 'pago' && p.valorPago && p.valorPago < p.valor - 0.01;
 
             return `
                 <div class="venda-item">
@@ -413,12 +461,14 @@ async function abrirDetalheVenda(id) {
                             Venc: ${formatDate(p.dataVencimento)}
                             ${p.dataPagamento ? ' • Pago: ' + formatDate(p.dataPagamento) : ''}
                             ${isParcial ? ' • Pago parcial: ' + formatMoney(p.valorPago) : ''}
+                            ${pagouMenos ? ' • Recebido: ' + formatMoney(p.valorPago) + ' (resto distribuído)' : ''}
                         </div>
                     </div>
                     <div style="text-align: right;">
                         <div style="font-weight: 700; ${p.status === 'pago' ? 'color: var(--accent)' : isAtrasado ? 'color: var(--danger)' : ''}">
-                            ${p.status === 'pago' ? formatMoney(p.valor) : formatMoney(restante)}
+                            ${p.status === 'pago' ? formatMoney(p.valorPago || p.valor) : formatMoney(restante)}
                         </div>
+                        ${pagouMenos ? `<div style="font-size: 10px; color: var(--text-muted); text-decoration: line-through;">${formatMoney(p.valor)}</div>` : ''}
                         ${p.status !== 'pago' ? `
                             <div style="display: flex; gap: 4px; margin-top: 4px; justify-content: flex-end;">
                                 <button class="btn btn-accent btn-sm" style="padding: 6px 10px; font-size: 11px; width: auto;" 
