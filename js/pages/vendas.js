@@ -674,15 +674,132 @@ async function confirmarPagamentoValor(parcelaId, forma) {
         showToast('Digite o valor recebido!', true);
         return;
     }
-    await marcarParcelaPaga(parcelaId, forma, valorInput);
     const parcela = await db.parcelas.get(parcelaId);
-    if (parcela.status === 'pago') {
-        showToast('✅ Parcela quitada!');
+    const restante = parcela.valor - (parcela.valorPago || 0);
+
+    // If paying less than expected, ask confirmation
+    if (valorInput < restante - 0.01) {
+        const diff = restante - valorInput;
+        const vendaId = parcela.vendaId;
+
+        // Check if this is the LAST pending parcela
+        const todasParcelas = await db.parcelas.where('vendaId').equals(vendaId).toArray();
+        const pendentes = todasParcelas.filter(p => p.id !== parcelaId && p.status !== 'pago');
+        const isUltima = pendentes.length === 0;
+
+        if (isUltima) {
+            // Last parcela underpaid → offer to extend
+            openModal(`
+                <div class="modal-header">
+                    <h2 class="modal-title">⚠️ Última Parcela</h2>
+                    <button class="modal-close" onclick="abrirDetalheVenda(${vendaId})">✕</button>
+                </div>
+                <div style="text-align: center; padding: 16px 0;">
+                    <p style="font-size: 14px;">Esta é a última parcela mas ainda ficará um valor pendente.</p>
+                    <p style="font-size: 13px; color: var(--text-secondary); margin-top: 8px;">
+                        Valor da parcela: <strong>${formatMoney(restante)}</strong><br>
+                        Recebido: <strong>${formatMoney(valorInput)}</strong><br>
+                        Pendente: <strong style="color: var(--danger);">${formatMoney(diff)}</strong>
+                    </p>
+                    <p style="font-size: 14px; margin-top: 12px; font-weight: 600;">Deseja ampliar o parcelamento?</p>
+                </div>
+                <div class="confirm-actions">
+                    <button class="btn btn-ghost" onclick="executarPagamentoVenda(${parcelaId}, '${forma}', ${valorInput})">Não, encerrar assim</button>
+                    <button class="btn btn-accent" onclick="ampliarParcelasUI(${vendaId}, ${parcelaId}, '${forma}', ${valorInput}, ${diff})">Sim, criar novas parcelas</button>
+                </div>
+            `);
+        } else {
+            // Not last → confirm redistribution
+            openModal(`
+                <div class="modal-header">
+                    <h2 class="modal-title">⚠️ Confirmar</h2>
+                    <button class="modal-close" onclick="abrirDetalheVenda(${vendaId})">✕</button>
+                </div>
+                <div style="text-align: center; padding: 16px 0;">
+                    <p style="font-size: 14px;">O valor é diferente do esperado.</p>
+                    <p style="font-size: 13px; color: var(--text-secondary); margin-top: 8px;">
+                        Esperado: <strong>${formatMoney(restante)}</strong><br>
+                        Recebido: <strong>${formatMoney(valorInput)}</strong><br>
+                        Faltou: <strong style="color: var(--danger);">${formatMoney(diff)}</strong>
+                    </p>
+                    <p style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">
+                        O valor pendente será distribuído nas ${pendentes.length} parcela${pendentes.length > 1 ? 's' : ''} restante${pendentes.length > 1 ? 's' : ''}.
+                    </p>
+                </div>
+                <div class="confirm-actions">
+                    <button class="btn btn-ghost" onclick="abrirDetalheVenda(${vendaId})">Cancelar</button>
+                    <button class="btn btn-accent" onclick="executarPagamentoVenda(${parcelaId}, '${forma}', ${valorInput})">Confirmar</button>
+                </div>
+            `);
+        }
     } else {
-        showToast('✅ Pagamento parcial registrado!');
+        // Paying full or more — execute directly
+        await executarPagamentoVenda(parcelaId, forma, valorInput);
     }
+}
+
+async function executarPagamentoVenda(parcelaId, forma, valor) {
+    await marcarParcelaPaga(parcelaId, forma, valor);
+    const parcela = await db.parcelas.get(parcelaId);
+    showToast('✅ Pagamento registrado!');
     closeModal();
     abrirDetalheVenda(parcela.vendaId);
+}
+
+// Ampliar parcelas when last one is underpaid
+function ampliarParcelasUI(vendaId, parcelaId, forma, valorPago, pendente) {
+    openModal(`
+        <div class="modal-header">
+            <h2 class="modal-title">📋 Ampliar Parcelas</h2>
+            <button class="modal-close" onclick="abrirDetalheVenda(${vendaId})">✕</button>
+        </div>
+        <div style="margin-bottom: 12px;">
+            <div style="font-size: 13px; color: var(--text-secondary);">Valor pendente a parcelar:</div>
+            <div style="font-size: 20px; font-weight: 800; color: var(--warning);">${formatMoney(pendente)}</div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Quantas parcelas novas?</label>
+            <select class="form-input" id="ampliar-num-parcelas">
+                ${[1,2,3,4,5,6].map(n => `<option value="${n}">${n}x de ${formatMoney(pendente/n)}</option>`).join('')}
+            </select>
+        </div>
+        <button class="btn btn-accent mt-16" onclick="executarAmpliarParcelas(${vendaId}, ${parcelaId}, '${forma}', ${valorPago}, ${pendente})">
+            ✅ Confirmar
+        </button>
+    `);
+}
+
+async function executarAmpliarParcelas(vendaId, parcelaId, forma, valorPago, pendente) {
+    const numNovas = parseInt(document.getElementById('ampliar-num-parcelas').value);
+
+    // 1. Pay current (last) parcela with the amount received
+    await marcarParcelaPaga(parcelaId, forma, valorPago);
+
+    // 2. Create new parcelas for the pending amount
+    const valorCada = Math.round((pendente / numNovas) * 100) / 100;
+    const hoje = new Date();
+    for (let i = 1; i <= numNovas; i++) {
+        const venc = new Date(hoje);
+        venc.setMonth(venc.getMonth() + i);
+        await db.parcelas.add({
+            vendaId: vendaId,
+            clienteId: (await db.vendas.get(vendaId)).clienteId,
+            numero: 900 + i, // High number to not conflict
+            valor: valorCada,
+            valorPago: 0,
+            dataVencimento: venc.toISOString().split('T')[0],
+            status: 'pendente'
+        });
+    }
+
+    // 3. Update venda numParcelas
+    const venda = await db.vendas.get(vendaId);
+    const allParcelas = await db.parcelas.where('vendaId').equals(vendaId).toArray();
+    await db.vendas.update(vendaId, { numParcelas: allParcelas.length, status: 'ativa' });
+
+    showToast(`✅ ${numNovas} parcela${numNovas > 1 ? 's' : ''} adicionada${numNovas > 1 ? 's' : ''}!`);
+    closeModal();
+    abrirDetalheVenda(vendaId);
 }
 
 

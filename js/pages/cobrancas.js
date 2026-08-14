@@ -348,71 +348,122 @@ async function confirmarPagCobranca(parcelaId, forma) {
     }
 
     // If different from expected, ask confirmation
-    if (Math.abs(valorInput - restante) > 0.01) {
+    if (valorInput < restante - 0.01) {
         const diff = restante - valorInput;
-        openModal(`
-            <div class="modal-header">
-                <h2 class="modal-title">⚠️ Confirmar</h2>
-                <button class="modal-close" onclick="closeModal()">✕</button>
-            </div>
-            <div style="text-align: center; padding: 16px 0;">
-                <p style="font-size: 14px;">O valor é diferente do esperado.</p>
-                <p style="font-size: 13px; color: var(--text-secondary); margin-top: 8px;">
-                    Esperado: <strong>${formatMoney(restante)}</strong><br>
-                    Recebido: <strong>${formatMoney(valorInput)}</strong><br>
-                    ${diff > 0 ? `Faltou: <strong class="text-danger">${formatMoney(diff)}</strong> (será distribuído nas próximas parcelas)` : ''}
-                </p>
-            </div>
-            <div class="confirm-actions">
-                <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-                <button class="btn btn-accent" onclick="executarPagCobranca(${parcelaId}, '${forma}', ${valorInput})">Confirmar</button>
-            </div>
-        `);
+        const vendaId = parcela.vendaId;
+
+        // Check if this is the LAST pending parcela
+        const todasParcelas = await db.parcelas.where('vendaId').equals(vendaId).toArray();
+        const pendentes = todasParcelas.filter(p => p.id !== parcelaId && p.status !== 'pago');
+        const isUltima = pendentes.length === 0;
+
+        if (isUltima) {
+            // Last parcela underpaid → offer to extend
+            openModal(`
+                <div class="modal-header">
+                    <h2 class="modal-title">⚠️ Última Parcela</h2>
+                    <button class="modal-close" onclick="closeModal()">✕</button>
+                </div>
+                <div style="text-align: center; padding: 16px 0;">
+                    <p style="font-size: 14px;">Esta é a última parcela mas ainda ficará um valor pendente.</p>
+                    <p style="font-size: 13px; color: var(--text-secondary); margin-top: 8px;">
+                        Valor da parcela: <strong>${formatMoney(restante)}</strong><br>
+                        Recebido: <strong>${formatMoney(valorInput)}</strong><br>
+                        Pendente: <strong style="color: var(--danger);">${formatMoney(diff)}</strong>
+                    </p>
+                    <p style="font-size: 14px; margin-top: 12px; font-weight: 600;">Deseja ampliar o parcelamento?</p>
+                </div>
+                <div class="confirm-actions">
+                    <button class="btn btn-ghost" onclick="executarPagCobranca(${parcelaId}, '${forma}', ${valorInput})">Não, encerrar assim</button>
+                    <button class="btn btn-accent" onclick="ampliarParcelasCobranca(${vendaId}, ${parcelaId}, '${forma}', ${valorInput}, ${diff})">Sim, criar novas parcelas</button>
+                </div>
+            `);
+        } else {
+            openModal(`
+                <div class="modal-header">
+                    <h2 class="modal-title">⚠️ Confirmar</h2>
+                    <button class="modal-close" onclick="closeModal()">✕</button>
+                </div>
+                <div style="text-align: center; padding: 16px 0;">
+                    <p style="font-size: 14px;">O valor é diferente do esperado.</p>
+                    <p style="font-size: 13px; color: var(--text-secondary); margin-top: 8px;">
+                        Esperado: <strong>${formatMoney(restante)}</strong><br>
+                        Recebido: <strong>${formatMoney(valorInput)}</strong><br>
+                        Faltou: <strong style="color: var(--danger);">${formatMoney(diff)}</strong>
+                    </p>
+                    <p style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">
+                        O valor pendente será distribuído nas ${pendentes.length} parcela${pendentes.length > 1 ? 's' : ''} restante${pendentes.length > 1 ? 's' : ''}.
+                    </p>
+                </div>
+                <div class="confirm-actions">
+                    <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+                    <button class="btn btn-accent" onclick="executarPagCobranca(${parcelaId}, '${forma}', ${valorInput})">Confirmar</button>
+                </div>
+            `);
+        }
     } else {
         await executarPagCobranca(parcelaId, forma, valorInput);
     }
 }
 
+// Ampliar parcelas from cobrancas
+function ampliarParcelasCobranca(vendaId, parcelaId, forma, valorPago, pendente) {
+    openModal(`
+        <div class="modal-header">
+            <h2 class="modal-title">📋 Ampliar Parcelas</h2>
+            <button class="modal-close" onclick="closeModal()">✕</button>
+        </div>
+        <div style="margin-bottom: 12px;">
+            <div style="font-size: 13px; color: var(--text-secondary);">Valor pendente a parcelar:</div>
+            <div style="font-size: 20px; font-weight: 800; color: var(--warning);">${formatMoney(pendente)}</div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Quantas parcelas novas?</label>
+            <select class="form-input" id="ampliar-cob-num-parcelas">
+                ${[1,2,3,4,5,6].map(n => `<option value="${n}">${n}x de ${formatMoney(pendente/n)}</option>`).join('')}
+            </select>
+        </div>
+        <button class="btn btn-accent mt-16" onclick="executarAmpliarParcelasCobranca(${vendaId}, ${parcelaId}, '${forma}', ${valorPago}, ${pendente})">
+            ✅ Confirmar
+        </button>
+    `);
+}
+
+async function executarAmpliarParcelasCobranca(vendaId, parcelaId, forma, valorPago, pendente) {
+    const numNovas = parseInt(document.getElementById('ampliar-cob-num-parcelas').value);
+
+    // 1. Pay current parcela
+    await marcarParcelaPaga(parcelaId, forma, valorPago);
+
+    // 2. Create new parcelas
+    const valorCada = Math.round((pendente / numNovas) * 100) / 100;
+    const hoje = new Date();
+    const venda = await db.vendas.get(vendaId);
+    for (let i = 1; i <= numNovas; i++) {
+        const venc = new Date(hoje);
+        venc.setMonth(venc.getMonth() + i);
+        await db.parcelas.add({
+            vendaId: vendaId,
+            clienteId: venda.clienteId,
+            numero: 900 + i,
+            valor: valorCada,
+            valorPago: 0,
+            dataVencimento: venc.toISOString().split('T')[0],
+            status: 'pendente'
+        });
+    }
+
+    // 3. Update venda
+    const allParcelas = await db.parcelas.where('vendaId').equals(vendaId).toArray();
+    await db.vendas.update(vendaId, { numParcelas: allParcelas.length, status: 'ativa' });
+
+    showToast(`✅ ${numNovas} parcela${numNovas > 1 ? 's' : ''} adicionada${numNovas > 1 ? 's' : ''}!`);
+    closeModal();
+    renderCobrancas();
+}
+
 async function executarPagCobranca(parcelaId, forma, valor) {
-    const parcela = await db.parcelas.get(parcelaId);
-    const restante = parcela.valor - (parcela.valorPago || 0);
-
-    // Mark this parcela as FULLY paid (closed) regardless of amount
-    await db.parcelas.update(parcelaId, {
-        status: 'pago',
-        valorPago: parcela.valor,
-        dataPagamento: new Date().toISOString().split('T')[0],
-        formaPagamento: forma
-    });
-
-    // Register payment for actual amount received
-    await db.pagamentos.add({
-        parcelaId: parcelaId,
-        vendaId: parcela.vendaId,
-        clienteId: parcela.clienteId,
-        valor: valor,
-        data: new Date().toISOString(),
-        forma: forma
-    });
-
-    // If paid less, redistribute difference among remaining parcelas
-    if (valor < restante - 0.01) {
-        const diff = restante - valor;
-        const todasParcelas = await db.parcelas.where('vendaId').equals(parcela.vendaId).toArray();
-        const pendentes = todasParcelas.filter(p => p.id !== parcelaId && p.status !== 'pago');
-        if (pendentes.length > 0) {
-            const ajuste = Math.round((diff / pendentes.length) * 100) / 100;
-            for (const p of pendentes) {
-                await db.parcelas.update(p.id, { valor: Math.round((p.valor + ajuste) * 100) / 100 });
-            }
-        }
-    }
-
-    // Check if all paid
-    const todasParcelas = await db.parcelas.where('vendaId').equals(parcela.vendaId).toArray();
-    if (todasParcelas.every(p => p.status === 'pago')) {
-        await db.vendas.update(parcela.vendaId, { status: 'quitada' });
-    }
+    await marcarParcelaPaga(parcelaId, forma, valor);
 
     closeModal();
     showToast('✅ Pagamento registrado!');
