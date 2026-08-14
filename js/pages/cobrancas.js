@@ -172,7 +172,7 @@ async function renderCobrancaCards(items, hoje) {
                         const diasAtraso = isAtrasado ? Math.abs(daysDiff(p.dataVencimento)) : 0;
                         const restante = p.valor - (p.valorPago || 0);
                         return `
-                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border);">
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); cursor: pointer;" onclick="if(!event.target.closest('button')){closeModal();navigateTo('vendas');setTimeout(()=>abrirDetalheVenda(${p.vendaId}),300);}">
                                 <div style="font-size: 13px; flex: 1;">
                                     ${isAtrasado ? '🔴' : '🟡'} Parcela ${p.numero} • ${formatDate(p.dataVencimento)}
                                     ${isAtrasado ? `<span style="color: var(--danger); font-size: 11px;"> (${diasAtraso}d)</span>` : ''}
@@ -180,8 +180,8 @@ async function renderCobrancaCards(items, hoje) {
                                 </div>
                                 <div style="display: flex; align-items: center; gap: 6px;">
                                     <span style="font-weight: 700; font-size: 13px;">${formatMoney(restante)}</span>
-                                    <button class="btn btn-accent btn-sm" style="padding:4px 8px; font-size:10px; width:auto;" onclick="pagarParcelaCobranca(${p.id})">Pix</button>
-                                    <button class="btn btn-ghost btn-sm" style="padding:4px 8px; font-size:10px; width:auto;" onclick="pagarParcelaCobranca(${p.id}, 'dinheiro')">💵</button>
+                                    <button class="btn btn-accent btn-sm" style="padding:4px 8px; font-size:10px; width:auto;" onclick="event.stopPropagation();pagarParcelaCobranca(${p.id})">Pix</button>
+                                    <button class="btn btn-ghost btn-sm" style="padding:4px 8px; font-size:10px; width:auto;" onclick="event.stopPropagation();pagarParcelaCobranca(${p.id}, 'dinheiro')">💵</button>
                                 </div>
                             </div>
                         `;

@@ -170,7 +170,7 @@ async function editarVenda(vendaId, changes) {
         }
 
         // Calculate remaining amount
-        const jaPago = pagasExistentes.reduce((sum, p) => sum + p.valor, 0);
+        const jaPago = pagasExistentes.reduce((sum, p) => sum + (p.valorPago || p.valor), 0);
         const valorRestante = updatedVenda.valorTotal - jaPago - (updatedVenda.valorEntrada || 0);
 
         if (valorRestante > 0) {
