@@ -2,7 +2,7 @@
    VendIX - Service Worker (Offline Support)
    ============================================ */
 
-const CACHE_NAME = 'vendix-v12';
+const CACHE_NAME = 'vendix-v14';
 const ASSETS = [
     './',
     './index.html',

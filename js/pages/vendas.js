@@ -70,16 +70,69 @@ setInterval    // Separate: active vendas, quitadas, incompletas, and vendas of 
             `;
         }
     } else {
-        // Normal mode: one item per venda
-        for (const v of ativas) {
-            listHTML += await renderVendaItem(v, clienteCache[v.clienteId], false);
+        // Normal mode: group by year/month if many vendas
+        if (ativas.length > 10) {
+            const byMonth = {};
+            for (const v of ativas) {
+                const key = v.data.substring(0, 7); // "2026-08"
+                if (!byMonth[key]) byMonth[key] = [];
+                byMonth[key].push(v);
+            }
+            const monthKeys = Object.keys(byMonth).sort((a, b) => window._vendasOrdenAsc ? a.localeCompare(b) : b.localeCompare(a));
+            for (const key of monthKeys) {
+                const [year, month] = key.split('-');
+                const monthName = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][parseInt(month)-1];
+                const monthVendas = byMonth[key];
+                const isFirst = monthKeys.indexOf(key) === 0;
+                listHTML += `
+                    <div class="collapse-toggle" onclick="toggleCollapse('vendas-${key}')">
+                        <span>${monthName} ${year} (${monthVendas.length})</span>
+                        <span class="arrow">▼</span>
+                    </div>
+                    <div id="vendas-${key}" class="collapse-content${isFirst ? '' : ' hidden'}">
+                `;
+                for (const v of monthVendas) {
+                    listHTML += await renderVendaItem(v, clienteCache[v.clienteId], false);
+                }
+                listHTML += `</div>`;
+            }
+        } else {
+            // Few vendas: render flat
+            for (const v of ativas) {
+                listHTML += await renderVendaItem(v, clienteCache[v.clienteId], false);
+            }
         }
     }
 
-    // Render quitadas (collapsed)
+    // Render quitadas grouped by year/month
     let quitadasHTML = '';
-    for (const v of quitadas) {
-        quitadasHTML += await renderVendaItem(v, clienteCache[v.clienteId], true);
+    if (quitadas.length > 5) {
+        const byMonth = {};
+        for (const v of quitadas) {
+            const key = v.data.substring(0, 7);
+            if (!byMonth[key]) byMonth[key] = [];
+            byMonth[key].push(v);
+        }
+        const monthKeys = Object.keys(byMonth).sort((a, b) => b.localeCompare(a)); // newest first
+        for (const key of monthKeys) {
+            const [year, month] = key.split('-');
+            const monthName = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][parseInt(month)-1];
+            quitadasHTML += `
+                <div class="collapse-toggle" onclick="toggleCollapse('quit-${key}')">
+                    <span>${monthName} ${year} (${byMonth[key].length})</span>
+                    <span class="arrow">▼</span>
+                </div>
+                <div id="quit-${key}" class="collapse-content hidden">
+            `;
+            for (const v of byMonth[key]) {
+                quitadasHTML += await renderVendaItem(v, clienteCache[v.clienteId], true);
+            }
+            quitadasHTML += `</div>`;
+        }
+    } else {
+        for (const v of quitadas) {
+            quitadasHTML += await renderVendaItem(v, clienteCache[v.clienteId], true);
+        }
     }
 
     content.innerHTML = `

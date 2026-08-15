@@ -125,10 +125,10 @@ async function abrirDetalheCliente(id) {
         </div>
 
         ${totalDevendo > 0 ? `
-            <div class="card" style="border-left: 4px solid var(--warning);">
+            <div class="card" style="border-left: 4px solid var(--warning); cursor: pointer;" onclick="closeModal(); navigateTo('cobrancas'); setTimeout(()=>filtrarCobrancasPorCliente(${id}), 400);">
                 <div style="font-size: 13px; color: var(--text-secondary);">Total Devendo</div>
                 <div style="font-size: 22px; font-weight: 800; color: var(--warning);">${formatMoney(totalDevendo)}</div>
-                <div style="font-size: 12px; color: var(--text-muted);">${pendentes.length} parcela${pendentes.length > 1 ? 's' : ''} pendente${pendentes.length > 1 ? 's' : ''}</div>
+                <div style="font-size: 12px; color: var(--text-muted);">${pendentes.length} parcela${pendentes.length > 1 ? 's' : ''} pendente${pendentes.length > 1 ? 's' : ''} • <span style="color: var(--accent);">Toca para ver cobranças →</span></div>
             </div>
         ` : `
             <div class="card" style="border-left: 4px solid var(--accent);">

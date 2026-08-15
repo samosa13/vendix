@@ -23,8 +23,29 @@ async function renderCobrancas() {
         }
     }
 
+    // Build client list for search
+    const clienteIds = [...new Set(pendentes.map(p => p.clienteId))];
+    const clientes = [];
+    for (const cid of clienteIds) {
+        const c = await getCliente(cid);
+        if (c) clientes.push(c);
+    }
+    clientes.sort((a, b) => a.nome.localeCompare(b.nome));
+
     const content = document.getElementById('app-content');
     content.innerHTML = `
+        <!-- Client search -->
+        <div class="form-group" style="margin-bottom: 12px;">
+            <div class="search-dropdown" id="cob-cliente-dropdown">
+                <input type="text" class="form-input" id="cob-cliente-search" placeholder="🔍 Filtrar por cliente..." autocomplete="off" 
+                    oninput="filtrarDropdownCobranca()" onfocus="filtrarDropdownCobranca()" style="font-size: 13px; padding: 10px 12px;">
+                <div class="dropdown-list" id="cob-cliente-dropdown-list">
+                    <div class="dropdown-item" onclick="filtrarCobrancasPorCliente(0)"><strong>Todos os clientes</strong></div>
+                    ${clientes.map(c => `<div class="dropdown-item" data-id="${c.id}" onclick="filtrarCobrancasPorCliente(${c.id})">${c.nome}</div>`).join('')}
+                </div>
+            </div>
+        </div>
+
         <!-- Tabs -->
         <div class="tabs">
             <button class="tab-btn active" id="tab-hoje" onclick="switchTabCobranca('hoje')">
@@ -41,30 +62,68 @@ async function renderCobrancas() {
         <div id="cobrancas-content"></div>
     `;
 
-    // Render default tab
-    await renderTabCobranca('hoje', [...atrasadas, ...paraHoje]);
+    // Render default tab (with filter if set)
+    await renderTabCobrancaFiltered('hoje');
 }
 
-async function switchTabCobranca(tab) {
-    document.querySelectorAll('.tabs .tab-btn').forEach(b => b.classList.remove('active'));
-    document.getElementById('tab-' + tab).classList.add('active');
+// Global filter state
+window._cobFilterClienteId = 0;
 
+function filtrarDropdownCobranca() {
+    const input = document.getElementById('cob-cliente-search');
+    const list = document.getElementById('cob-cliente-dropdown-list');
+    const term = input.value.toLowerCase().trim();
+    const items = list.querySelectorAll('.dropdown-item');
+    items.forEach(item => {
+        const text = item.textContent.toLowerCase();
+        item.style.display = (!term || text.includes(term)) ? 'block' : 'none';
+    });
+    list.style.display = 'block';
+}
+
+async function filtrarCobrancasPorCliente(clienteId) {
+    window._cobFilterClienteId = clienteId;
+    const input = document.getElementById('cob-cliente-search');
+    const list = document.getElementById('cob-cliente-dropdown-list');
+    if (clienteId === 0) {
+        if (input) input.value = '';
+    } else {
+        const cliente = await getCliente(clienteId);
+        if (input && cliente) input.value = cliente.nome;
+    }
+    if (list) list.style.display = 'none';
+    // Get active tab
+    const activeTab = document.querySelector('.tabs .tab-btn.active');
+    const tab = activeTab ? activeTab.id.replace('tab-', '') : 'hoje';
+    await renderTabCobrancaFiltered(tab);
+}
+
+async function renderTabCobrancaFiltered(tab) {
     const hoje = getToday();
     const pendentes = await getParcelasPendentes();
+    const filterId = window._cobFilterClienteId || 0;
 
     let items;
     if (tab === 'hoje') {
         items = pendentes.filter(p => p.dataVencimento <= hoje);
     } else if (tab === 'proximos') {
-        items = pendentes.filter(p => {
-            const diff = daysDiff(p.dataVencimento);
-            return diff > 0 && diff <= 7;
-        });
+        items = pendentes.filter(p => { const d = daysDiff(p.dataVencimento); return d > 0 && d <= 7; });
     } else {
         items = pendentes;
     }
 
+    // Apply client filter
+    if (filterId > 0) {
+        items = items.filter(p => p.clienteId === filterId);
+    }
+
     await renderTabCobranca(tab, items);
+}
+
+async function switchTabCobranca(tab) {
+    document.querySelectorAll('.tabs .tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + tab).classList.add('active');
+    await renderTabCobrancaFiltered(tab);
 }
 
 async function renderTabCobranca(tab, items) {
@@ -115,9 +174,42 @@ async function renderTabCobranca(tab, items) {
         html += await renderCobrancaCards(doHoje, hoje);
     }
 
-    // For other tabs, render all together
+    // For other tabs, render all together (grouped by year/month)
     if (tab !== 'hoje') {
-        html += await renderCobrancaCards(items, hoje);
+        // Sort toggle
+        window._cobOrdenAsc = window._cobOrdenAsc !== undefined ? window._cobOrdenAsc : true; // oldest first by default
+        html += `<button class="btn btn-ghost btn-sm mb-8" onclick="toggleOrdenCobrancas()" style="width: auto; font-size: 12px;">
+            ${window._cobOrdenAsc ? '📅 Mais antigas primeiro' : '📅 Mais recentes primeiro'} ↕️
+        </button>`;
+
+        items.sort((a, b) => window._cobOrdenAsc 
+            ? a.dataVencimento.localeCompare(b.dataVencimento) 
+            : b.dataVencimento.localeCompare(a.dataVencimento));
+
+        // Group by year/month
+        const byMonth = {};
+        for (const p of items) {
+            const key = p.dataVencimento.substring(0, 7); // "2026-08"
+            if (!byMonth[key]) byMonth[key] = [];
+            byMonth[key].push(p);
+        }
+
+        const monthKeys = Object.keys(byMonth).sort((a, b) => window._cobOrdenAsc ? a.localeCompare(b) : b.localeCompare(a));
+        for (const key of monthKeys) {
+            const [year, month] = key.split('-');
+            const monthName = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][parseInt(month)-1];
+            const monthItems = byMonth[key];
+            const monthTotal = monthItems.reduce((s, p) => s + p.valor - (p.valorPago || 0), 0);
+            html += `
+                <div class="collapse-toggle" onclick="toggleCollapse('cob-${key}')">
+                    <span>${monthName} ${year} (${monthItems.length}) • ${formatMoney(monthTotal)}</span>
+                    <span class="arrow">▼</span>
+                </div>
+                <div id="cob-${key}" class="collapse-content${monthKeys.indexOf(key) === 0 ? '' : ' hidden'}">
+                    ${await renderCobrancaCards(monthItems, hoje)}
+                </div>
+            `;
+        }
     }
 
     // Route suggestion
@@ -486,4 +578,11 @@ async function openWhatsAppCobranca(clienteId) {
     }
     const msg = configVal('mensagemWhatsApp').replace('{nome}', cliente.nome);
     openWhatsApp(cliente.telefone, msg);
+}
+
+function toggleOrdenCobrancas() {
+    window._cobOrdenAsc = !window._cobOrdenAsc;
+    const activeTab = document.querySelector('.tabs .tab-btn.active');
+    const tab = activeTab ? activeTab.id.replace('tab-', '') : 'todos';
+    renderTabCobrancaFiltered(tab);
 }
