@@ -144,14 +144,41 @@ async function renderTabCobranca(tab, items) {
     const hoje = getToday();
 
     if (items.length === 0) {
-        container.innerHTML = `
+        // Still show totals if client filter is active
+        const filtroAtivo = window._cobFilterClienteId > 0;
+        let emptyHTML = '';
+        if (filtroAtivo) {
+            const allPendentes = await getParcelasPendentes();
+            const allFiltered = allPendentes.filter(p => p.clienteId === window._cobFilterClienteId);
+            const totalDivida = allFiltered.reduce((s, p) => s + p.valor - (p.valorPago || 0), 0);
+            emptyHTML += `
+                <div class="card" style="text-align: center; margin-bottom: 16px;">
+                    <div style="display: flex; justify-content: space-around; align-items: center;">
+                        <div>
+                            <div style="font-size: 11px; color: var(--text-secondary);">${tab === 'hoje' ? 'COBRAR AGORA' : tab === 'proximos' ? 'PRÓXIMOS 7D' : 'NESTA VISTA'}</div>
+                            <div style="font-size: 22px; font-weight: 800; color: var(--accent);">R$ 0,00</div>
+                            <div style="font-size: 11px; color: var(--text-muted);">0 parcelas</div>
+                        </div>
+                        <div style="width: 1px; height: 40px; background: var(--border);"></div>
+                        <div>
+                            <div style="font-size: 11px; color: var(--text-secondary);">DÍVIDA TOTAL</div>
+                            <div style="font-size: 22px; font-weight: 800; color: var(--warning);">${formatMoney(totalDivida)}</div>
+                            <div style="font-size: 11px; color: var(--text-muted);">${allFiltered.length} parcela${allFiltered.length > 1 ? 's' : ''}</div>
+                        </div>
+                    </div>
+                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 8px;"><span onclick="filtrarCobrancasPorCliente(0)" style="color:var(--accent);cursor:pointer;">limpar filtro ✕</span></div>
+                </div>
+            `;
+        }
+        emptyHTML += `
             <div class="empty-state">
                 <div class="empty-icon">${tab === 'hoje' ? '🎉' : '📅'}</div>
                 <div class="empty-text">
-                    ${tab === 'hoje' ? 'Nenhuma cobrança para hoje!' : 'Nenhuma parcela pendente'}
+                    ${filtroAtivo ? 'Nenhuma parcela nesta vista para este cliente' : (tab === 'hoje' ? 'Nenhuma cobrança para hoje!' : 'Nenhuma parcela pendente')}
                 </div>
             </div>
         `;
+        container.innerHTML = emptyHTML;
         return;
     }
 
@@ -297,7 +324,7 @@ async function renderCobrancaCards(items, hoje) {
                         const hasEarlierUnpaid = parcelas.some(pp => pp.vendaId === p.vendaId && pp.numero < p.numero && pp.status !== 'pago');
                         const canPay = !hasEarlierUnpaid;
                         return `
-                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); cursor: pointer;" onclick="if(!event.target.closest('button')){closeModal();navigateTo('vendas');setTimeout(()=>abrirDetalheVenda(${p.vendaId}),300);}">
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); cursor: pointer;" onclick="if(!event.target.closest('button')){abrirDetalheVendaFrom(${p.vendaId}, 'cobrancas');}">
                                 <div style="font-size: 13px; flex: 1;">
                                     ${isAtrasado ? '🔴' : '🟡'} Parcela ${p.numero} • ${formatDate(p.dataVencimento)}
                                     ${isAtrasado ? `<span style="color: var(--danger); font-size: 11px;"> (${diasAtraso}d)</span>` : ''}

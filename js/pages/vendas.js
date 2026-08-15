@@ -477,6 +477,28 @@ async function salvarVenda() {
 
 // ============ DETALLE DE VENDA ============
 
+// Track where user came from (for back navigation)
+window._vendaDetailOrigin = null;
+
+function abrirDetalheVendaFrom(id, origin) {
+    window._vendaDetailOrigin = origin || null;
+    abrirDetalheVenda(id);
+}
+
+function voltarDeDetalheVenda() {
+    closeModal();
+    if (window._vendaDetailOrigin === 'cobrancas') {
+        navigateTo('cobrancas');
+        // Re-apply filter after navigation
+        setTimeout(() => {
+            if (window._cobFilterClienteId > 0) {
+                filtrarCobrancasPorCliente(window._cobFilterClienteId);
+            }
+        }, 400);
+    }
+    window._vendaDetailOrigin = null;
+}
+
 async function abrirDetalheVenda(id) {
     const venda = await getVenda(id);
     if (!venda) return;
@@ -491,7 +513,7 @@ async function abrirDetalheVenda(id) {
     openModal(`
         <div class="modal-header">
             <h2 class="modal-title">🛒 Venda #${id}</h2>
-            <button class="modal-close" onclick="closeModal()">✕</button>
+            <button class="modal-close" onclick="${window._vendaDetailOrigin ? 'voltarDeDetalheVenda()' : 'closeModal()'}">✕</button>
         </div>
 
         <div class="card">
