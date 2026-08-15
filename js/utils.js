@@ -136,6 +136,17 @@ function whatsappLink(phone, message = '') {
     return `https://wa.me/${num}${message ? '?text=' + encodeURIComponent(message) : ''}`;
 }
 
+// Open WhatsApp - iOS compatible (window.open fails in PWA WebView on iOS)
+function openWhatsApp(phone, message = '') {
+    const url = whatsappLink(phone, message);
+    // Try window.open first (works on Android), fallback to location.href (works on iOS)
+    const win = window.open(url, '_blank');
+    if (!win || win.closed || typeof win.closed === 'undefined') {
+        // Popup blocked (iOS PWA) — use direct navigation
+        location.href = url;
+    }
+}
+
 
 // Toggle collapsible section
 function toggleCollapse(id) {

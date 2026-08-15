@@ -1120,14 +1120,22 @@ async function enviarComprovanteAtual(vendaId) {
 
 async function enviarTextoWhatsApp(cliente, texto) {
     if (cliente && cliente.telefone) {
-        const link = whatsappLink(cliente.telefone, texto);
-        window.open(link, '_blank');
+        openWhatsApp(cliente.telefone, texto);
     } else {
         try {
             await navigator.clipboard.writeText(texto);
             showToast('📋 Comprovante copiado!');
         } catch(e) {
-            showToast('Cliente sem telefone cadastrado', true);
+            // iOS PWA clipboard fallback
+            const ta = document.createElement('textarea');
+            ta.value = texto;
+            ta.style.position = 'fixed';
+            ta.style.left = '-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            showToast('📋 Comprovante copiado!');
         }
     }
 }
