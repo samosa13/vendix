@@ -38,7 +38,8 @@ async function renderCobrancas() {
         <div class="form-group" style="margin-bottom: 12px;">
             <div class="search-dropdown" id="cob-cliente-dropdown">
                 <input type="text" class="form-input" id="cob-cliente-search" placeholder="🔍 Filtrar por cliente..." autocomplete="off" 
-                    oninput="filtrarDropdownCobranca()" onfocus="filtrarDropdownCobranca()" style="font-size: 13px; padding: 10px 12px;">
+                    oninput="filtrarDropdownCobranca()" onfocus="filtrarDropdownCobranca()" style="font-size: 13px; padding: 10px 36px 10px 12px;">
+                <span onclick="filtrarCobrancasPorCliente(0)" style="position:absolute; right:12px; top:50%; transform:translateY(-50%); cursor:pointer; font-size:16px; color:var(--text-muted); display:none;" id="cob-cliente-clear">✕</span>
                 <div class="dropdown-list" id="cob-cliente-dropdown-list">
                     <div class="dropdown-item" onclick="filtrarCobrancasPorCliente(0)"><strong>Todos os clientes</strong></div>
                     ${clientes.map(c => `<div class="dropdown-item" data-id="${c.id}" onclick="filtrarCobrancasPorCliente(${c.id})">${c.nome}</div>`).join('')}
@@ -85,11 +86,14 @@ async function filtrarCobrancasPorCliente(clienteId) {
     window._cobFilterClienteId = clienteId;
     const input = document.getElementById('cob-cliente-search');
     const list = document.getElementById('cob-cliente-dropdown-list');
+    const clearBtn = document.getElementById('cob-cliente-clear');
     if (clienteId === 0) {
         if (input) input.value = '';
+        if (clearBtn) clearBtn.style.display = 'none';
     } else {
         const cliente = await getCliente(clienteId);
         if (input && cliente) input.value = cliente.nome;
+        if (clearBtn) clearBtn.style.display = 'block';
     }
     if (list) list.style.display = 'none';
     // Get active tab
