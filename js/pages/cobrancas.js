@@ -103,18 +103,27 @@ async function renderTabCobrancaFiltered(tab) {
     const pendentes = await getParcelasPendentes();
     const filterId = window._cobFilterClienteId || 0;
 
+    // Filter all pendentes by client if needed
+    const filtered = filterId > 0 ? pendentes.filter(p => p.clienteId === filterId) : pendentes;
+
+    // Update tab counters
+    const atrasadasCount = filtered.filter(p => p.dataVencimento < hoje).length;
+    const hojeCount = filtered.filter(p => p.dataVencimento === hoje).length;
+    const prox7Count = filtered.filter(p => { const d = daysDiff(p.dataVencimento); return d > 0 && d <= 7; }).length;
+    const tabHoje = document.getElementById('tab-hoje');
+    const tabProx = document.getElementById('tab-proximos');
+    const tabTodos = document.getElementById('tab-todos');
+    if (tabHoje) tabHoje.textContent = `Hoje (${atrasadasCount + hojeCount})`;
+    if (tabProx) tabProx.textContent = `Próximos 7d (${prox7Count})`;
+    if (tabTodos) tabTodos.textContent = `Todos (${filtered.length})`;
+
     let items;
     if (tab === 'hoje') {
-        items = pendentes.filter(p => p.dataVencimento <= hoje);
+        items = filtered.filter(p => p.dataVencimento <= hoje);
     } else if (tab === 'proximos') {
-        items = pendentes.filter(p => { const d = daysDiff(p.dataVencimento); return d > 0 && d <= 7; });
+        items = filtered.filter(p => { const d = daysDiff(p.dataVencimento); return d > 0 && d <= 7; });
     } else {
-        items = pendentes;
-    }
-
-    // Apply client filter
-    if (filterId > 0) {
-        items = items.filter(p => p.clienteId === filterId);
+        items = filtered;
     }
 
     await renderTabCobranca(tab, items);
@@ -154,11 +163,12 @@ async function renderTabCobranca(tab, items) {
 
     // Total
     const totalValor = items.reduce((s, p) => s + p.valor - (p.valorPago || 0), 0);
+    const filtroAtivo = window._cobFilterClienteId > 0;
     html += `
         <div class="card" style="text-align: center; margin-bottom: 16px;">
-            <div style="font-size: 12px; color: var(--text-secondary);">TOTAL A COBRAR</div>
+            <div style="font-size: 12px; color: var(--text-secondary);">${filtroAtivo ? '💲 TOTAL DO CLIENTE' : 'TOTAL A COBRAR'}</div>
             <div style="font-size: 26px; font-weight: 800; color: var(--accent);">${formatMoney(totalValor)}</div>
-            <div style="font-size: 12px; color: var(--text-muted);">${items.length} parcela${items.length > 1 ? 's' : ''}</div>
+            <div style="font-size: 12px; color: var(--text-muted);">${items.length} parcela${items.length > 1 ? 's' : ''}${filtroAtivo ? ' • <span onclick="filtrarCobrancasPorCliente(0)" style="color:var(--accent);cursor:pointer;">limpar filtro ✕</span>' : ''}</div>
         </div>
     `;
 
