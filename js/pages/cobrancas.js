@@ -161,14 +161,31 @@ async function renderTabCobranca(tab, items) {
 
     let html = '';
 
-    // Total
-    const totalValor = items.reduce((s, p) => s + p.valor - (p.valorPago || 0), 0);
+    // Totals: tab total + overall debt
+    const totalTab = items.reduce((s, p) => s + p.valor - (p.valorPago || 0), 0);
     const filtroAtivo = window._cobFilterClienteId > 0;
+
+    // Get ALL pending parcelas (not just this tab) for total debt
+    const allPendentes = await getParcelasPendentes();
+    const allFiltered = filtroAtivo ? allPendentes.filter(p => p.clienteId === window._cobFilterClienteId) : allPendentes;
+    const totalDivida = allFiltered.reduce((s, p) => s + p.valor - (p.valorPago || 0), 0);
+
     html += `
         <div class="card" style="text-align: center; margin-bottom: 16px;">
-            <div style="font-size: 12px; color: var(--text-secondary);">${filtroAtivo ? '💲 TOTAL DO CLIENTE' : 'TOTAL A COBRAR'}</div>
-            <div style="font-size: 26px; font-weight: 800; color: var(--accent);">${formatMoney(totalValor)}</div>
-            <div style="font-size: 12px; color: var(--text-muted);">${items.length} parcela${items.length > 1 ? 's' : ''}${filtroAtivo ? ' • <span onclick="filtrarCobrancasPorCliente(0)" style="color:var(--accent);cursor:pointer;">limpar filtro ✕</span>' : ''}</div>
+            <div style="display: flex; justify-content: space-around; align-items: center;">
+                <div>
+                    <div style="font-size: 11px; color: var(--text-secondary);">${tab === 'hoje' ? 'COBRAR AGORA' : tab === 'proximos' ? 'PRÓXIMOS 7D' : 'NESTA VISTA'}</div>
+                    <div style="font-size: 22px; font-weight: 800; color: var(--accent);">${formatMoney(totalTab)}</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">${items.length} parcela${items.length > 1 ? 's' : ''}</div>
+                </div>
+                <div style="width: 1px; height: 40px; background: var(--border);"></div>
+                <div>
+                    <div style="font-size: 11px; color: var(--text-secondary);">DÍVIDA TOTAL</div>
+                    <div style="font-size: 22px; font-weight: 800; color: var(--warning);">${formatMoney(totalDivida)}</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">${allFiltered.length} parcela${allFiltered.length > 1 ? 's' : ''}</div>
+                </div>
+            </div>
+            ${filtroAtivo ? `<div style="font-size: 11px; color: var(--text-muted); margin-top: 8px; text-align: center;"><span onclick="filtrarCobrancasPorCliente(0)" style="color:var(--accent);cursor:pointer;">limpar filtro ✕</span></div>` : ''}
         </div>
     `;
 
