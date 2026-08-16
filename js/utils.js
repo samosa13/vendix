@@ -36,9 +36,11 @@ function calcularParcelas(valorTotal, numParcelas, taxaJuros, dataInicio, valorE
     const parcelas = [];
     const valorFinanciar = valorTotal - valorEntrada;
 
+    if (valorFinanciar <= 0 || numParcelas <= 0) return parcelas;
+
     let valorParcela;
     if (taxaJuros > 0) {
-        // Price table (compound interest)
+        // Price table (PMT formula - standard Brazilian installment calculation)
         const taxa = taxaJuros / 100;
         valorParcela = valorFinanciar * (taxa * Math.pow(1 + taxa, numParcelas)) / (Math.pow(1 + taxa, numParcelas) - 1);
     } else {
@@ -61,11 +63,16 @@ function calcularParcelas(valorTotal, numParcelas, taxaJuros, dataInicio, valorE
         });
     }
 
-    // Ajust last parcela for rounding
-    const totalParcelas = valorParcela * numParcelas;
-    const diff = Math.round((valorFinanciar * (taxaJuros > 0 ? Math.pow(1 + taxaJuros/100, numParcelas) : 1) - totalParcelas) * 100) / 100;
-    if (Math.abs(diff) > 0.01 && parcelas.length > 0) {
-        // Just use the calculated value, small rounding is acceptable
+    // Adjust last parcela for rounding (total of all parcelas must equal PMT * n)
+    const totalCalculado = valorParcela * numParcelas;
+    const totalEsperado = taxaJuros > 0 ? valorParcela * numParcelas : valorFinanciar;
+    // For no-interest: ensure sum exactly equals valorFinanciar
+    if (taxaJuros === 0) {
+        const somaAtual = parcelas.reduce((s, p) => s + p.valor, 0);
+        const ajuste = Math.round((valorFinanciar - somaAtual) * 100) / 100;
+        if (Math.abs(ajuste) > 0.001 && parcelas.length > 0) {
+            parcelas[parcelas.length - 1].valor = Math.round((parcelas[parcelas.length - 1].valor + ajuste) * 100) / 100;
+        }
     }
 
     return parcelas;

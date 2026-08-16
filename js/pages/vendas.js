@@ -238,15 +238,16 @@ async function abrirFormVenda() {
             <input type="hidden" id="venda-cliente" value="">
         </div>
 
+        <!-- Multi-product section -->
         <div class="form-group">
-            <label class="form-label">Produto (opcional)</label>
+            <label class="form-label">Produtos</label>
+            <div id="venda-itens-lista"></div>
             <div class="search-dropdown" id="produto-dropdown">
-                <input type="text" class="form-input" id="venda-produto-input" placeholder="🔍 Digitar nome do produto..." autocomplete="off" oninput="filtrarDropdown('produto')" onfocus="filtrarDropdown('produto')">
+                <input type="text" class="form-input" id="venda-produto-input" placeholder="🔍 Adicionar produto..." autocomplete="off" oninput="filtrarDropdown('produto')" onfocus="filtrarDropdown('produto')" style="font-size: 13px;">
                 <div class="dropdown-list" id="produto-dropdown-list">
-                    ${produtos.filter(p => p.ativo !== 0 && (p.estoque || 0) > 0).map(p => `<div class="dropdown-item" data-id="${p.id}" data-vista="${p.precoVista}" data-prazo="${p.precoPrazo}" data-nome="${p.nome.replace(/"/g,'&quot;')}" onclick="selecionarDropdownProduto(${p.id}, '${p.nome.replace(/'/g,"\\'")}', ${p.precoVista}, ${p.precoPrazo})"><strong>${p.nome}</strong><span style="font-size:11px; color:var(--text-muted);"> Est: ${p.estoque}</span></div>`).join('')}
+                    ${produtos.filter(p => p.ativo !== 0 && (p.estoque || 0) > 0).map(p => `<div class="dropdown-item" data-id="${p.id}" data-vista="${p.precoVista}" data-prazo="${p.precoPrazo}" data-nome="${p.nome.replace(/"/g,'&quot;')}" onclick="adicionarProdutoVenda(${p.id}, '${p.nome.replace(/'/g,"\\'")}', ${p.precoVista}, ${p.precoPrazo})"><strong>${p.nome}</strong><span style="font-size:11px; color:var(--text-muted);"> Est: ${p.estoque} • ${formatMoney(p.precoPrazo)}</span></div>`).join('')}
                 </div>
             </div>
-            <input type="hidden" id="venda-produto" value="">
         </div>
 
         <div class="form-group">
@@ -256,7 +257,7 @@ async function abrirFormVenda() {
 
         <div class="form-group">
             <label class="form-label">Valor Total (R$)</label>
-            <input type="number" step="0.01" class="form-input" id="venda-valor" placeholder="0,00" style="font-size: 20px; font-weight: 700;">
+            <input type="number" step="0.01" class="form-input" id="venda-valor" placeholder="0,00" style="font-size: 20px; font-weight: 700;" oninput="calcularPreview()">
         </div>
 
         <!-- Tipo de venda -->
@@ -294,6 +295,7 @@ async function abrirFormVenda() {
 
     // Default to parcelado
     window._tipoVenda = 'parcelado';
+    window._vendaItens = []; // Multi-product list
 }
 
 // selectTipoVenda updates price when switching vista/parcelado
@@ -303,14 +305,10 @@ function selectTipoVenda(tipo) {
     document.getElementById('tab-parcelado').classList.toggle('active', tipo === 'parcelado');
     document.getElementById('opcoes-parcelado').style.display = tipo === 'parcelado' ? 'block' : 'none';
 
-    // Update price if product is selected
-    const produtoId = document.getElementById('venda-produto').value;
-    if (produtoId) {
-        const item = document.querySelector(`#produto-dropdown-list .dropdown-item[data-id="${produtoId}"]`);
-        if (item) {
-            const preco = tipo === 'vista' ? item.dataset.vista : item.dataset.prazo;
-            if (preco) document.getElementById('venda-valor').value = preco;
-        }
+    // Recalculate with new prices (vista vs prazo) for all items
+    if (window._vendaItens && window._vendaItens.length > 0) {
+        renderItensVenda();
+        atualizarValorTotalVenda();
     }
     calcularPreview();
 }
@@ -348,19 +346,66 @@ function selecionarDropdown(tipo, id, nome) {
 }
 
 function selecionarDropdownProduto(id, nome, precoVista, precoPrazo) {
+    // Legacy - replaced by adicionarProdutoVenda for multi-product
+    adicionarProdutoVenda(id, nome, precoVista, precoPrazo);
+}
+
+function adicionarProdutoVenda(id, nome, precoVista, precoPrazo) {
     const input = document.getElementById('venda-produto-input');
-    const hidden = document.getElementById('venda-produto');
     const list = document.getElementById('produto-dropdown-list');
-    input.value = nome;
-    hidden.value = id;
+    input.value = '';
     list.style.display = 'none';
 
-    // Fill price based on venda type
+    // Check if already added
+    if (window._vendaItens.find(it => it.produtoId === id)) {
+        showToast('Produto já adicionado!', true);
+        return;
+    }
+
     const tipo = window._tipoVenda;
     const preco = tipo === 'vista' ? precoVista : precoPrazo;
-    if (preco) document.getElementById('venda-valor').value = preco;
-    document.getElementById('venda-descricao').value = nome;
+
+    window._vendaItens.push({ produtoId: id, nome, precoVista, precoPrazo, quantidade: 1, preco });
+    renderItensVenda();
+    atualizarValorTotalVenda();
     calcularPreview();
+}
+
+function removerProdutoVenda(idx) {
+    window._vendaItens.splice(idx, 1);
+    renderItensVenda();
+    atualizarValorTotalVenda();
+    calcularPreview();
+}
+
+function renderItensVenda() {
+    const container = document.getElementById('venda-itens-lista');
+    if (!container) return;
+    if (window._vendaItens.length === 0) {
+        container.innerHTML = '';
+        return;
+    }
+    const tipo = window._tipoVenda;
+    container.innerHTML = window._vendaItens.map((it, idx) => {
+        const preco = tipo === 'vista' ? it.precoVista : it.precoPrazo;
+        return `
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:var(--bg-input); border-radius:6px; margin-bottom:4px; font-size:13px;">
+                <span style="flex:1;">${it.nome}</span>
+                <span style="font-weight:700; margin:0 8px;">${formatMoney(preco)}</span>
+                <button onclick="removerProdutoVenda(${idx})" style="background:none; border:none; color:var(--danger); cursor:pointer; font-size:16px; padding:2px 6px;">✕</button>
+            </div>
+        `;
+    }).join('');
+}
+
+function atualizarValorTotalVenda() {
+    const tipo = window._tipoVenda;
+    const total = window._vendaItens.reduce((s, it) => s + (tipo === 'vista' ? it.precoVista : it.precoPrazo), 0);
+    document.getElementById('venda-valor').value = total > 0 ? total.toFixed(2) : '';
+    // Update descricao
+    if (window._vendaItens.length > 0) {
+        document.getElementById('venda-descricao').value = window._vendaItens.map(it => it.nome).join(' + ');
+    }
 }
 
 // Close dropdowns on outside click
@@ -422,17 +467,16 @@ async function salvarVenda() {
     const tipo = window._tipoVenda;
     const descricao = document.getElementById('venda-descricao').value.trim();
 
-    // Get produto from hidden field
-    const produtoId = parseInt(document.getElementById('venda-produto').value) || null;
-    let produtoMatch = null;
-    if (produtoId) {
-        produtoMatch = await db.produtos.get(produtoId);
-    }
+    // Multi-product items
+    const itens = (window._vendaItens || []).map(it => ({ produtoId: it.produtoId, quantidade: it.quantidade || 1 }));
 
-    // Check stock availability
-    if (produtoMatch && (produtoMatch.estoque || 0) <= 0) {
-        showToast('⚠️ Produto sem estoque!', true);
-        return;
+    // Check stock for all items
+    for (const item of itens) {
+        const produto = await db.produtos.get(item.produtoId);
+        if (produto && (produto.estoque || 0) < item.quantidade) {
+            showToast(`⚠️ ${produto.nome} sem estoque!`, true);
+            return;
+        }
     }
 
     let parcelas = [];
@@ -461,7 +505,7 @@ async function salvarVenda() {
         clienteId,
         data: getToday(),
         descricao,
-        itens: produtoId ? [{ produtoId, quantidade: 1 }] : [],
+        itens: itens,
         valorTotal: valor,
         tipo,
         numParcelas,
