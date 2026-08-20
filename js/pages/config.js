@@ -201,6 +201,20 @@ function renderConfig() {
             ✅ Salvar Configurações
         </button>
 
+        <!-- Archive data -->
+        <div class="section-title mt-24">📦 Arquivar Dados</div>
+        <div class="card">
+            <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px;">
+                Arquiva vendas finalizadas (quitadas, canceladas, incompletas) de um ano específico. Os dados saem das listas mas podem ser consultados e restaurados.
+            </div>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="abrirArquivar()">
+                📦 Arquivar por Ano
+            </button>
+            <button type="button" class="btn btn-ghost btn-sm mt-8" onclick="abrirArquivo()">
+                📂 Ver Arquivo
+            </button>
+        </div>
+
         <!-- Reset data -->
         <div class="section-title mt-24">🗑️ Limpar Dados</div>
         <div class="card">
@@ -305,4 +319,208 @@ async function carregarDemoENavegar() {
     await carregarDadosDemo();
     showToast('✅ Dados de exemplo carregados!');
     navigateTo('dashboard');
+}
+
+
+// ============ ARQUIVO (Archive) ============
+
+async function abrirArquivar() {
+    // Find years that have archivable vendas (quitada, cancelada, incompleta)
+    const vendas = await db.vendas.toArray();
+    const archivable = vendas.filter(v => ['quitada', 'cancelada', 'incompleta'].includes(v.status));
+    
+    const years = {};
+    for (const v of archivable) {
+        const year = v.data.substring(0, 4);
+        if (!years[year]) years[year] = 0;
+        years[year]++;
+    }
+
+    if (Object.keys(years).length === 0) {
+        showToast('Nenhuma venda finalizada para arquivar', true);
+        return;
+    }
+
+    const yearOptions = Object.entries(years)
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([y, count]) => `<option value="${y}">${y} (${count} vendas)</option>`)
+        .join('');
+
+    openModal(`
+        <div class="modal-header">
+            <h2 class="modal-title">📦 Arquivar por Ano</h2>
+            <button class="modal-close" onclick="closeModal()">✕</button>
+        </div>
+        <div style="padding: 12px 0;">
+            <p style="font-size: 14px; margin-bottom: 12px;">Escolha o ano para arquivar:</p>
+            <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 16px;">
+                Apenas vendas finalizadas (quitadas, canceladas, incompletas) serão arquivadas. Vendas ativas não são afetadas.
+            </p>
+            <div class="form-group">
+                <select class="form-input" id="arquivo-ano">
+                    ${yearOptions}
+                </select>
+            </div>
+        </div>
+        <button class="btn btn-accent" onclick="executarArquivar()">
+            📦 Arquivar
+        </button>
+    `);
+}
+
+async function executarArquivar() {
+    const ano = document.getElementById('arquivo-ano').value;
+    if (!ano) return;
+
+    const vendas = await db.vendas.toArray();
+    const toArchive = vendas.filter(v => 
+        ['quitada', 'cancelada', 'incompleta'].includes(v.status) && v.data.startsWith(ano)
+    );
+
+    if (toArchive.length === 0) {
+        showToast('Nenhuma venda para arquivar neste ano', true);
+        return;
+    }
+
+    // Collect all related data
+    const vendaIds = toArchive.map(v => v.id);
+    const parcelas = [];
+    const pagamentos = [];
+    for (const vId of vendaIds) {
+        const vParcelas = await db.parcelas.where('vendaId').equals(vId).toArray();
+        parcelas.push(...vParcelas);
+        for (const p of vParcelas) {
+            const vPagamentos = await db.pagamentos.where('parcelaId').equals(p.id).toArray();
+            pagamentos.push(...vPagamentos);
+        }
+    }
+
+    // Save to arquivo table
+    await db.arquivo.add({
+        tipo: 'vendas',
+        ano: ano,
+        data: new Date().toISOString(),
+        vendas: toArchive,
+        parcelas: parcelas,
+        pagamentos: pagamentos,
+        totalVendas: toArchive.length,
+        totalParcelas: parcelas.length
+    });
+
+    // Delete from main tables
+    for (const p of pagamentos) await db.pagamentos.delete(p.id);
+    for (const p of parcelas) await db.parcelas.delete(p.id);
+    for (const v of toArchive) await db.vendas.delete(v.id);
+
+    showToast(`📦 ${toArchive.length} vendas de ${ano} arquivadas!`);
+    closeModal();
+    navigateTo('config');
+}
+
+async function abrirArquivo() {
+    const arquivos = await db.arquivo.toArray();
+
+    if (arquivos.length === 0) {
+        openModal(`
+            <div class="modal-header">
+                <h2 class="modal-title">📂 Arquivo</h2>
+                <button class="modal-close" onclick="closeModal()">✕</button>
+            </div>
+            <div class="empty-state">
+                <div class="empty-icon">📂</div>
+                <div class="empty-text">Nenhum dado arquivado</div>
+            </div>
+        `);
+        return;
+    }
+
+    const list = arquivos.map(a => `
+        <div class="list-item" style="flex-wrap: wrap;">
+            <div class="item-icon">📦</div>
+            <div class="item-info">
+                <div class="item-name">Ano ${a.ano}</div>
+                <div class="item-detail">${a.totalVendas} vendas • ${a.totalParcelas} parcelas • Arquivado em ${formatDate(a.data.split('T')[0])}</div>
+            </div>
+            <button class="btn btn-ghost btn-sm" style="width:auto; font-size:11px;" onclick="confirmarDesarquivar(${a.id})">
+                ↩️ Restaurar
+            </button>
+        </div>
+    `).join('');
+
+    openModal(`
+        <div class="modal-header">
+            <h2 class="modal-title">📂 Arquivo</h2>
+            <button class="modal-close" onclick="closeModal()">✕</button>
+        </div>
+        <div style="padding: 8px 0;">
+            ${list}
+        </div>
+    `);
+}
+
+function confirmarDesarquivar(arquivoId) {
+    openModal(`
+        <div class="modal-header">
+            <h2 class="modal-title">↩️ Restaurar Arquivo</h2>
+            <button class="modal-close" onclick="closeModal()">✕</button>
+        </div>
+        <div style="text-align: center; padding: 16px 0;">
+            <p style="font-size: 14px;">Tem certeza que quer restaurar estes dados?</p>
+            <p style="font-size: 13px; color: var(--text-secondary); margin-top: 8px;">
+                As vendas voltarão para as listas principais.
+            </p>
+        </div>
+        <div class="confirm-actions">
+            <button class="btn btn-ghost" onclick="abrirArquivo()">Cancelar</button>
+            <button class="btn btn-accent" onclick="executarDesarquivar(${arquivoId})">Restaurar</button>
+        </div>
+    `);
+}
+
+async function executarDesarquivar(arquivoId) {
+    const arquivo = await db.arquivo.get(arquivoId);
+    if (!arquivo) return;
+
+    // Restore vendas
+    for (const v of arquivo.vendas) {
+        delete v.id; // Let IndexedDB assign new ID
+        const newVendaId = await db.vendas.add(v);
+        
+        // Restore parcelas for this venda
+        const vendaParcelas = arquivo.parcelas.filter(p => p.vendaId === v.id || p.vendaId === newVendaId);
+        // Actually we need to map old vendaId to new
+    }
+
+    // Simpler approach: bulk add with original structure
+    // Since IDs are auto-increment and may conflict, we re-add without IDs
+    const vendaIdMap = {};
+    for (const v of arquivo.vendas) {
+        const oldId = v.id;
+        delete v.id;
+        const newId = await db.vendas.add(v);
+        vendaIdMap[oldId] = newId;
+    }
+
+    const parcelaIdMap = {};
+    for (const p of arquivo.parcelas) {
+        const oldId = p.id;
+        delete p.id;
+        p.vendaId = vendaIdMap[p.vendaId] || p.vendaId;
+        const newId = await db.parcelas.add(p);
+        parcelaIdMap[oldId] = newId;
+    }
+
+    for (const pg of arquivo.pagamentos) {
+        delete pg.id;
+        pg.vendaId = vendaIdMap[pg.vendaId] || pg.vendaId;
+        pg.parcelaId = parcelaIdMap[pg.parcelaId] || pg.parcelaId;
+        await db.pagamentos.add(pg);
+    }
+
+    // Delete arquivo entry
+    await db.arquivo.delete(arquivoId);
+
+    showToast(`↩️ ${arquivo.totalVendas} vendas restauradas!`);
+    closeModal();
+    navigateTo('config');
 }

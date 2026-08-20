@@ -13,6 +13,15 @@ db.version(1).stores({
     pagamentos: '++id, parcelaId, vendaId, data'
 });
 
+db.version(2).stores({
+    produtos: '++id, nome, categoria, ativo',
+    clientes: '++id, nome, cidade, bairro, ativo',
+    vendas: '++id, clienteId, data, status',
+    parcelas: '++id, vendaId, clienteId, dataVencimento, status',
+    pagamentos: '++id, parcelaId, vendaId, data',
+    arquivo: '++id, tipo, ano, data'
+});
+
 // ============ PRODUTOS ============
 
 async function addProduto(produto) {
