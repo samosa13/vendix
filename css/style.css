@@ -754,6 +754,9 @@ textarea.form-input {
     background: #25D366;
     text-decoration: none;
     flex-shrink: 0;
+    border: none;
+    padding: 0;
+    cursor: pointer;
 }
 
 .btn-whatsapp-circle:active {

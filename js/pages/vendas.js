@@ -70,37 +70,30 @@ setInterval    // Separate: active vendas, quitadas, incompletas, and vendas of 
             `;
         }
     } else {
-        // Normal mode: group by year/month if many vendas
-        if (ativas.length > 10) {
-            const byMonth = {};
-            for (const v of ativas) {
-                const key = v.data.substring(0, 7); // "2026-08"
-                if (!byMonth[key]) byMonth[key] = [];
-                byMonth[key].push(v);
-            }
-            const monthKeys = Object.keys(byMonth).sort((a, b) => window._vendasOrdenAsc ? a.localeCompare(b) : b.localeCompare(a));
-            for (const key of monthKeys) {
-                const [year, month] = key.split('-');
-                const monthName = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][parseInt(month)-1];
-                const monthVendas = byMonth[key];
-                const isFirst = monthKeys.indexOf(key) === 0;
-                listHTML += `
-                    <div class="collapse-toggle" onclick="toggleCollapse('vendas-${key}')">
-                        <span>${monthName} ${year} (${monthVendas.length})</span>
-                        <span class="arrow">▼</span>
-                    </div>
-                    <div id="vendas-${key}" class="collapse-content${isFirst ? '' : ' hidden'}">
-                `;
-                for (const v of monthVendas) {
-                    listHTML += await renderVendaItem(v, clienteCache[v.clienteId], false);
-                }
-                listHTML += `</div>`;
-            }
-        } else {
-            // Few vendas: render flat
-            for (const v of ativas) {
+        // Normal mode: always group by year/month
+        const byMonth = {};
+        for (const v of ativas) {
+            const key = v.data.substring(0, 7); // "2026-08"
+            if (!byMonth[key]) byMonth[key] = [];
+            byMonth[key].push(v);
+        }
+        const monthKeys = Object.keys(byMonth).sort((a, b) => window._vendasOrdenAsc ? a.localeCompare(b) : b.localeCompare(a));
+        for (const key of monthKeys) {
+            const [year, month] = key.split('-');
+            const monthName = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][parseInt(month)-1];
+            const monthVendas = byMonth[key];
+            const isFirst = monthKeys.indexOf(key) === 0;
+            listHTML += `
+                <div class="collapse-toggle" onclick="toggleCollapse('vendas-${key}')">
+                    <span>${monthName} ${year} (${monthVendas.length})</span>
+                    <span class="arrow">▼</span>
+                </div>
+                <div id="vendas-${key}" class="collapse-content${isFirst ? '' : ' hidden'}">
+            `;
+            for (const v of monthVendas) {
                 listHTML += await renderVendaItem(v, clienteCache[v.clienteId], false);
             }
+            listHTML += `</div>`;
         }
     }
 
@@ -271,7 +264,7 @@ async function abrirFormVenda() {
                 <div class="form-group">
                     <label class="form-label">Nº Parcelas</label>
                     <select class="form-input" id="venda-parcelas" onchange="calcularPreview()">
-                        ${[2,3,4,5,6,8,10,12,15,18,24,36].map(n => `<option value="${n}" ${n === configVal('parcelasPadrao') ? 'selected' : ''}>${n}x</option>`).join('')}
+                        ${Array.from({length:36}, (_,i) => i+1).map(n => `<option value="${n}" ${n === configVal('parcelasPadrao') ? 'selected' : ''}>${n}x</option>`).join('')}
                     </select>
                 </div>
                 <div class="form-group">
@@ -356,16 +349,53 @@ function adicionarProdutoVenda(id, nome, precoVista, precoPrazo) {
     input.value = '';
     list.style.display = 'none';
 
-    // Check if already added
-    if (window._vendaItens.find(it => it.produtoId === id)) {
-        showToast('Produto já adicionado!', true);
+    // Check if already added — increment quantity instead
+    const existing = window._vendaItens.find(it => it.produtoId === id);
+    if (existing) {
+        // Get max stock
+        const maxBtn = document.querySelector(`[data-prod-id="${id}"]`);
+        const maxStock = existing.maxStock || 99;
+        if (existing.quantidade < maxStock) {
+            existing.quantidade++;
+        } else {
+            showToast('Estoque máximo atingido!', true);
+        }
+        renderItensVenda();
+        atualizarValorTotalVenda();
+        calcularPreview();
         return;
     }
 
     const tipo = window._tipoVenda;
     const preco = tipo === 'vista' ? precoVista : precoPrazo;
 
-    window._vendaItens.push({ produtoId: id, nome, precoVista, precoPrazo, quantidade: 1, preco });
+    // Get stock limit
+    const itemEl = document.querySelector(`#produto-dropdown-list .dropdown-item[data-id="${id}"]`);
+    let maxStock = 99;
+    if (itemEl) {
+        const estText = itemEl.textContent.match(/Est:\s*(\d+)/);
+        if (estText) maxStock = parseInt(estText[1]);
+    }
+
+    window._vendaItens.push({ produtoId: id, nome, precoVista, precoPrazo, quantidade: 1, preco, maxStock });
+    renderItensVenda();
+    atualizarValorTotalVenda();
+    calcularPreview();
+}
+
+function alterarQuantidadeProduto(idx, delta) {
+    const item = window._vendaItens[idx];
+    if (!item) return;
+    const novaQtd = item.quantidade + delta;
+    if (novaQtd < 1) {
+        // Remove item
+        window._vendaItens.splice(idx, 1);
+    } else if (novaQtd > item.maxStock) {
+        showToast('Estoque máximo!', true);
+        return;
+    } else {
+        item.quantidade = novaQtd;
+    }
     renderItensVenda();
     atualizarValorTotalVenda();
     calcularPreview();
@@ -387,12 +417,17 @@ function renderItensVenda() {
     }
     const tipo = window._tipoVenda;
     container.innerHTML = window._vendaItens.map((it, idx) => {
-        const preco = tipo === 'vista' ? it.precoVista : it.precoPrazo;
+        const precoUnit = tipo === 'vista' ? it.precoVista : it.precoPrazo;
+        const subtotal = precoUnit * it.quantidade;
         return `
-            <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:var(--bg-input); border-radius:6px; margin-bottom:4px; font-size:13px;">
-                <span style="flex:1;">${it.nome}</span>
-                <span style="font-weight:700; margin:0 8px;">${formatMoney(preco)}</span>
-                <button onclick="removerProdutoVenda(${idx})" style="background:none; border:none; color:var(--danger); cursor:pointer; font-size:16px; padding:2px 6px;">✕</button>
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 10px; background:var(--bg-input); border-radius:6px; margin-bottom:4px; font-size:13px;" data-prod-id="${it.produtoId}">
+                <span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${it.nome}</span>
+                <div style="display:flex; align-items:center; gap:6px; margin-left:8px;">
+                    <button onclick="alterarQuantidadeProduto(${idx},-1)" style="background:var(--bg-card); border:1px solid var(--border); color:var(--text); width:26px; height:26px; border-radius:50%; cursor:pointer; font-size:14px;">−</button>
+                    <span style="font-weight:700; min-width:20px; text-align:center;">${it.quantidade}</span>
+                    <button onclick="alterarQuantidadeProduto(${idx},1)" style="background:var(--bg-card); border:1px solid var(--border); color:var(--text); width:26px; height:26px; border-radius:50%; cursor:pointer; font-size:14px;" ${it.quantidade >= it.maxStock ? 'disabled style="opacity:0.4;"' : ''}>+</button>
+                    <span style="font-weight:700; min-width:65px; text-align:right;">${formatMoney(subtotal)}</span>
+                </div>
             </div>
         `;
     }).join('');
@@ -400,11 +435,16 @@ function renderItensVenda() {
 
 function atualizarValorTotalVenda() {
     const tipo = window._tipoVenda;
-    const total = window._vendaItens.reduce((s, it) => s + (tipo === 'vista' ? it.precoVista : it.precoPrazo), 0);
+    const total = window._vendaItens.reduce((s, it) => {
+        const precoUnit = tipo === 'vista' ? it.precoVista : it.precoPrazo;
+        return s + (precoUnit * it.quantidade);
+    }, 0);
     document.getElementById('venda-valor').value = total > 0 ? total.toFixed(2) : '';
     // Update descricao
     if (window._vendaItens.length > 0) {
-        document.getElementById('venda-descricao').value = window._vendaItens.map(it => it.nome).join(' + ');
+        document.getElementById('venda-descricao').value = window._vendaItens.map(it => 
+            it.quantidade > 1 ? `${it.quantidade}x ${it.nome}` : it.nome
+        ).join(' + ');
     }
 }
 
@@ -523,9 +563,15 @@ async function salvarVenda() {
 
 // Track where user came from (for back navigation)
 window._vendaDetailOrigin = null;
+window._vendaDetailOriginTab = null;
 
 function abrirDetalheVendaFrom(id, origin) {
     window._vendaDetailOrigin = origin || null;
+    // Save active tab if coming from cobrancas
+    if (origin === 'cobrancas') {
+        const activeTab = document.querySelector('.tabs .tab-btn.active');
+        window._vendaDetailOriginTab = activeTab ? activeTab.id.replace('tab-', '') : 'hoje';
+    }
     abrirDetalheVenda(id);
 }
 
@@ -533,14 +579,19 @@ function voltarDeDetalheVenda() {
     closeModal();
     if (window._vendaDetailOrigin === 'cobrancas') {
         navigateTo('cobrancas');
-        // Re-apply filter after navigation
+        // Re-apply filter and tab after navigation
         setTimeout(() => {
+            // Switch to saved tab
+            if (window._vendaDetailOriginTab && window._vendaDetailOriginTab !== 'hoje') {
+                switchTabCobranca(window._vendaDetailOriginTab);
+            }
             if (window._cobFilterClienteId > 0) {
                 filtrarCobrancasPorCliente(window._cobFilterClienteId);
             }
         }, 400);
     }
     window._vendaDetailOrigin = null;
+    window._vendaDetailOriginTab = null;
 }
 
 async function abrirDetalheVenda(id) {
