@@ -226,6 +226,17 @@ function renderConfig() {
             </button>
         </div>
 
+        <!-- Logout -->
+        <div class="section-title mt-24">🔒 Segurança</div>
+        <div class="card">
+            <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px;">
+                Bloqueia o app e volta pra tela de login. Seus dados continuam salvos.
+            </div>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="doLogout()">
+                🔒 Sair / Bloquear App
+            </button>
+        </div>
+
         <!-- Spacer for nav -->
         <div style="height: 40px;"></div>
     `;

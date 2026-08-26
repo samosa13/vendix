@@ -46,6 +46,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     });
 
+    // Check login
+    if (!isLoggedIn()) {
+        await renderLoginScreen();
+        return; // Stop init — login screen handles the rest
+    }
+
     // Start on dashboard
     navigateTo('dashboard');
 
