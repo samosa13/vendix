@@ -2,7 +2,7 @@
    VendIX - Service Worker (Offline Support)
    ============================================ */
 
-const CACHE_NAME = 'vendix-v19';
+const CACHE_NAME = 'vendix-v20';
 const ASSETS = [
     './',
     './index.html',
@@ -23,7 +23,8 @@ const ASSETS = [
     './js/demo-data.js',
     './icons/icon-192.png',
     './icons/icon-512.png',
-    './icons/logo-vendix.png'
+    './icons/logo-vendix.png',
+    './icons/icon-header.png'
 ];
 
 // Install: cache all assets
