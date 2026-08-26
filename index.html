@@ -84,9 +84,38 @@
     <script src="js/app.js"></script>
 
     <script>
-        // Service Worker
+        // Service Worker with auto-update detection
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('./sw.js');
+            navigator.serviceWorker.register('./sw.js').then(reg => {
+                // Check for updates periodically (every 30 min)
+                setInterval(() => reg.update(), 30 * 60 * 1000);
+
+                // Detect new SW waiting to activate
+                reg.addEventListener('updatefound', () => {
+                    const newSW = reg.installing;
+                    newSW.addEventListener('statechange', () => {
+                        if (newSW.state === 'activated') {
+                            // New version active — show update banner
+                            showUpdateBanner();
+                        }
+                    });
+                });
+            });
+
+            // Also detect controller change (skipWaiting was called)
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                showUpdateBanner();
+            });
+        }
+
+        function showUpdateBanner() {
+            // Don't show if already visible
+            if (document.getElementById('update-banner')) return;
+            const banner = document.createElement('div');
+            banner.id = 'update-banner';
+            banner.style.cssText = 'position:fixed; top:0; left:0; right:0; z-index:9999; background:#00e676; color:#1a1a2e; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; font-size:14px; font-weight:600; box-shadow:0 2px 8px rgba(0,0,0,0.3);';
+            banner.innerHTML = '📲 Atualização disponível! <button onclick="location.reload()" style="background:#1a1a2e; color:#00e676; border:none; padding:6px 14px; border-radius:6px; font-weight:700; cursor:pointer;">Atualizar</button>';
+            document.body.prepend(banner);
         }
 
         // PWA Install prompt
