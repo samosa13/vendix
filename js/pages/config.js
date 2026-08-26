@@ -229,8 +229,12 @@ function renderConfig() {
         <!-- Logout -->
         <div class="section-title mt-24">🔒 Segurança</div>
         <div class="card">
-            <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px;">
-                Bloqueia o app e volta pra tela de login. Seus dados continuam salvos.
+            <div class="form-group" style="margin-bottom: 12px;">
+                <label class="form-label">Tempo de sessão (minutos)</label>
+                <input type="number" class="form-input" id="cfg-session-timeout" value="${parseInt(localStorage.getItem('vendix_session_timeout')) || 15}" min="1" max="480" style="width: 100px;">
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+                    Depois deste tempo sem usar o app, pede senha de novo.
+                </div>
             </div>
             <button type="button" class="btn btn-ghost btn-sm" onclick="doLogout()">
                 🔒 Sair / Bloquear App
@@ -259,6 +263,11 @@ function salvarConfig() {
     };
 
     saveConfig(config);
+
+    // Save session timeout separately (not part of app config, it's auth)
+    const timeout = parseInt(document.getElementById('cfg-session-timeout')?.value) || 15;
+    localStorage.setItem('vendix_session_timeout', timeout.toString());
+
     document.getElementById('page-title').textContent = config.nomeNegocio;
     showToast('✅ Configurações salvas!');
 }

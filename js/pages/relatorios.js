@@ -85,7 +85,27 @@ async function atualizarRelatorios() {
             <div class="summary-card green">
                 <div class="icon">📈</div>
                 <div class="number">${formatMoney(dados.lucroEstimado)}</div>
-                <div class="label">Lucro Estimado</div>
+                <div class="label">Lucro Líquido</div>
+            </div>
+        </div>
+
+        <!-- Profit breakdown -->
+        <div class="card" style="margin-bottom: 16px; border-left: 4px solid var(--accent);">
+            <div style="font-size: 13px; font-weight: 700; margin-bottom: 10px; color: var(--accent);">💰 Resultado do Mês</div>
+            <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px;">
+                <span style="color: var(--text-secondary);">Total Vendido</span>
+                <span style="font-weight: 700; color: var(--accent);">+ ${formatMoney(dados.totalVendido)}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px;">
+                <span style="color: var(--text-secondary);">Custo dos Produtos</span>
+                <span style="font-weight: 700; color: var(--danger);">- ${formatMoney(dados.custoTotal)}</span>
+            </div>
+            <div style="border-top: 1px solid var(--border); padding-top: 8px; margin-top: 8px; display: flex; justify-content: space-between; font-size: 15px;">
+                <span style="font-weight: 800;">Lucro Líquido</span>
+                <span style="font-weight: 800; color: ${dados.lucroEstimado >= 0 ? 'var(--accent)' : 'var(--danger)'};">${formatMoney(dados.lucroEstimado)}</span>
+            </div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">
+                Margem: ${dados.totalVendido > 0 ? Math.round((dados.lucroEstimado / dados.totalVendido) * 100) : 0}%
             </div>
         </div>
 
@@ -237,7 +257,7 @@ async function calcularDadosMes(mes, ano) {
     // Ticket médio
     const ticketMedio = numVendas > 0 ? totalVendido / numVendas : 0;
 
-    return { totalRecebido, totalVendido, numVendas, lucroEstimado, ticketMedio, clientesAtendidos: clientesIds.length, pix, dinheiro };
+    return { totalRecebido, totalVendido, numVendas, lucroEstimado, custoTotal, ticketMedio, clientesAtendidos: clientesIds.length, pix, dinheiro };
 }
 
 // Calculate weekly data

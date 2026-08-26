@@ -35,11 +35,32 @@ function getAuthData() {
 }
 
 function isAuthConfigured() { return getAuthData() !== null; }
-function isLoggedIn() { return sessionStorage.getItem('vendix_session') === 'active'; }
-function doLogin() { sessionStorage.setItem('vendix_session', 'active'); }
+function isLoggedIn() {
+    const session = localStorage.getItem('vendix_session_ts');
+    if (!session) return false;
+    const ts = parseInt(session);
+    const timeout = (parseInt(localStorage.getItem('vendix_session_timeout')) || 15) * 60 * 1000; // default 15min
+    if (Date.now() - ts > timeout) {
+        // Session expired
+        localStorage.removeItem('vendix_session_ts');
+        return false;
+    }
+    return true;
+}
+
+function doLogin() {
+    localStorage.setItem('vendix_session_ts', Date.now().toString());
+}
+
+function refreshSession() {
+    // Call on user interaction to keep session alive
+    if (localStorage.getItem('vendix_session_ts')) {
+        localStorage.setItem('vendix_session_ts', Date.now().toString());
+    }
+}
 
 function doLogout() {
-    sessionStorage.removeItem('vendix_session');
+    localStorage.removeItem('vendix_session_ts');
     renderLoginScreen();
 }
 

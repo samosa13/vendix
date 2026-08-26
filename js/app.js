@@ -19,6 +19,9 @@ let currentPage = 'dashboard';
 function navigateTo(page) {
     if (!pages[page]) return;
 
+    // Refresh session on every navigation
+    if (typeof refreshSession === 'function') refreshSession();
+
     currentPage = page;
 
     // Update nav buttons
