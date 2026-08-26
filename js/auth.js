@@ -36,33 +36,59 @@ function getAuthData() {
 
 function isAuthConfigured() { return getAuthData() !== null; }
 function isLoggedIn() {
-    const session = localStorage.getItem('vendix_session_ts');
-    if (!session) return false;
-    const ts = parseInt(session);
-    const timeout = (parseInt(localStorage.getItem('vendix_session_timeout')) || 15) * 60 * 1000; // default 15min
-    if (Date.now() - ts > timeout) {
-        // Session expired
+    // Rules:
+    // 1. App closed (killed) → ALWAYS ask login (sessionStorage cleared by OS)
+    // 2. App in background > timeout → ask login on return
+    // 3. App in background < timeout → NO login
+    // 4. Actively using the app → NEVER interrupt
+    
+    const sessionAlive = sessionStorage.getItem('vendix_session_alive');
+    const ts = localStorage.getItem('vendix_session_ts');
+    
+    if (!ts) return false; // Never logged in
+    
+    // App was closed (killed) → sessionStorage is gone → require login
+    if (!sessionAlive) {
         localStorage.removeItem('vendix_session_ts');
         return false;
     }
+    
+    // App is running — check if came back from long background
+    const timeout = (parseInt(localStorage.getItem('vendix_session_timeout')) || 15) * 60 * 1000;
+    if (Date.now() - parseInt(ts) > timeout) {
+        // Was in background too long
+        localStorage.removeItem('vendix_session_ts');
+        sessionStorage.removeItem('vendix_session_alive');
+        return false;
+    }
+    
     return true;
 }
 
 function doLogin() {
     localStorage.setItem('vendix_session_ts', Date.now().toString());
+    sessionStorage.setItem('vendix_session_alive', '1');
 }
 
 function refreshSession() {
-    // Call on user interaction to keep session alive
-    if (localStorage.getItem('vendix_session_ts')) {
+    // Update timestamp on every user interaction (keeps session alive while using)
+    if (sessionStorage.getItem('vendix_session_alive')) {
         localStorage.setItem('vendix_session_ts', Date.now().toString());
     }
 }
 
 function doLogout() {
     localStorage.removeItem('vendix_session_ts');
+    sessionStorage.removeItem('vendix_session_alive');
     renderLoginScreen();
 }
+
+// Check session when app returns from background
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && !isLoggedIn()) {
+        renderLoginScreen();
+    }
+});
 
 async function setupDefaultUser() {
     const salt = await generateSalt();
