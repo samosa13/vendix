@@ -39,6 +39,16 @@ function navigateTo(page) {
 
 // Init app
 document.addEventListener('DOMContentLoaded', async () => {
+    // One-time migrations
+    const cfg = localStorage.getItem('vendix_config');
+    if (cfg) {
+        const parsed = JSON.parse(cfg);
+        if (parsed.nomeNegocio === 'Alencar Vendas') {
+            parsed.nomeNegocio = 'Alencar Enxovais';
+            localStorage.setItem('vendix_config', JSON.stringify(parsed));
+        }
+    }
+
     // Load demo data if first time
     await carregarDadosDemo();
 

@@ -4,12 +4,13 @@
 
 // Default config values
 const CONFIG_DEFAULTS = {
-    nomeNegocio: 'VendIX',
+    nomeNegocio: 'Alencar Enxovais',
     dddPadrao: '49',
     jurosPadrao: 0,
     parcelasPadrao: 4,
     estoqueMinimoAlerta: 2,
     mensagemWhatsApp: 'Oi {nome}! Passando para lembrar das parcelas pendentes. Posso passar aí hoje?',
+    chavePixCelular: '49999344470',
     moeda: 'R$',
     horaBackup: '23:59',
     frequenciaBackup: 'diario',
@@ -123,6 +124,18 @@ function renderConfig() {
                 <textarea class="form-input" id="cfg-whatsapp" rows="3" placeholder="Mensagem automática...">${config.mensagemWhatsApp}</textarea>
                 <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
                     Use <strong>{nome}</strong> para incluir o nome do cliente automaticamente
+                </div>
+            </div>
+        </div>
+
+        <!-- Google Maps -->
+        <div class="section-title">📱 Pix</div>
+        <div class="card">
+            <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label">Chave Pix (Celular)</label>
+                <input type="text" class="form-input" id="cfg-chave-pix" value="${config.chavePixCelular || ''}" placeholder="Ex: 49999344470">
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+                    Aparece no comprovante para o cliente fazer Pix
                 </div>
             </div>
         </div>
@@ -254,6 +267,7 @@ function salvarConfig() {
         parcelasPadrao: parseInt(document.getElementById('cfg-parcelas').value) || 4,
         estoqueMinimoAlerta: parseInt(document.getElementById('cfg-estoque-min').value) || 2,
         mensagemWhatsApp: document.getElementById('cfg-whatsapp').value.trim() || CONFIG_DEFAULTS.mensagemWhatsApp,
+        chavePixCelular: document.getElementById('cfg-chave-pix').value.trim() || CONFIG_DEFAULTS.chavePixCelular,
         horaBackup: document.getElementById('cfg-hora-backup').value || '23:59',
         frequenciaBackup: document.getElementById('cfg-freq-backup').value || 'diario',
         mostrarRotaMaps: document.getElementById('cfg-maps').checked,

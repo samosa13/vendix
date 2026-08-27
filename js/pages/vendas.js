@@ -278,6 +278,14 @@ async function abrirFormVenda() {
                 <input type="number" step="0.01" class="form-input" id="venda-entrada" value="0" placeholder="0,00" onchange="calcularPreview()">
             </div>
 
+            <div class="form-group">
+                <label class="form-label">Data do 1º Vencimento</label>
+                <input type="date" class="form-input" id="venda-primeiro-vencimento" value="${proximoMes()}" onchange="calcularPreview()">
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+                    As parcelas seguintes vencem mês a mês a partir desta data
+                </div>
+            </div>
+
             <div id="preview-parcelas" class="card" style="display:none;"></div>
         </div>
 
@@ -463,13 +471,14 @@ function calcularPreview() {
     const numParcelas = parseInt(document.getElementById('venda-parcelas').value) || 1;
     const juros = parseFloat(document.getElementById('venda-juros').value) || 0;
     const entrada = parseFloat(document.getElementById('venda-entrada').value) || 0;
+    const primeiroVenc = document.getElementById('venda-primeiro-vencimento')?.value || null;
 
     if (valor <= 0) {
         document.getElementById('preview-parcelas').style.display = 'none';
         return;
     }
 
-    const parcelas = calcularParcelas(valor, numParcelas, juros, getToday(), entrada);
+    const parcelas = calcularParcelas(valor, numParcelas, juros, getToday(), entrada, primeiroVenc);
     const totalPagar = entrada + parcelas.reduce((s, p) => s + p.valor, 0);
 
     const preview = document.getElementById('preview-parcelas');
@@ -528,7 +537,7 @@ async function salvarVenda() {
         numParcelas = parseInt(document.getElementById('venda-parcelas').value);
         taxaJuros = parseFloat(document.getElementById('venda-juros').value) || 0;
         valorEntrada = parseFloat(document.getElementById('venda-entrada').value) || 0;
-        parcelas = calcularParcelas(valor, numParcelas, taxaJuros, getToday(), valorEntrada);
+        parcelas = calcularParcelas(valor, numParcelas, taxaJuros, getToday(), valorEntrada, document.getElementById('venda-primeiro-vencimento')?.value || null);
     } else {
         // À vista = 1 parcela paid immediately
         parcelas = [{
@@ -720,8 +729,11 @@ async function abrirEditarVenda(id) {
     const cliente = await getCliente(venda.clienteId);
     const clientes = await getClientes();
     const parcelas = await getParcelasByVenda(id);
+    parcelas.sort((a, b) => a.numero - b.numero);
     const pagas = parcelas.filter(p => p.status === 'pago');
+    const pendentes = parcelas.filter(p => p.status !== 'pago');
     const jaPago = pagas.reduce((sum, p) => sum + p.valor, 0);
+    const primeiroVencPendente = pendentes.length > 0 ? pendentes[0].dataVencimento : proximoMes();
 
     openModal(`
         <div class="modal-header">
@@ -760,7 +772,7 @@ async function abrirEditarVenda(id) {
                 <div class="form-group">
                     <label class="form-label">Nº Parcelas Total</label>
                     <select class="form-input" id="edit-venda-parcelas">
-                        ${[2,3,4,5,6,8,10,12,15,18,24,36].map(n => `<option value="${n}" ${n === venda.numParcelas ? 'selected' : ''}>${n}x</option>`).join('')}
+                        ${Array.from({length:36}, (_,i) => i+1).map(n => `<option value="${n}" ${n === venda.numParcelas ? 'selected' : ''}>${n}x</option>`).join('')}
                     </select>
                     <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
                         Aumente para adicionar mais parcelas (redistribui o pendente)
@@ -775,6 +787,14 @@ async function abrirEditarVenda(id) {
             <div class="form-group">
                 <label class="form-label">Entrada (R$)</label>
                 <input type="number" step="0.01" class="form-input" id="edit-venda-entrada" value="${venda.valorEntrada || 0}">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Data do 1º Vencimento (pendente)</label>
+                <input type="date" class="form-input" id="edit-venda-vencimento" value="${primeiroVencPendente}">
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+                    As parcelas pendentes serão recalculadas a partir desta data
+                </div>
             </div>
         ` : ''}
 
@@ -801,6 +821,7 @@ async function salvarEdicaoVenda(id, tipo) {
         changes.numParcelas = parseInt(document.getElementById('edit-venda-parcelas').value);
         changes.taxaJuros = parseFloat(document.getElementById('edit-venda-juros').value) || 0;
         changes.valorEntrada = parseFloat(document.getElementById('edit-venda-entrada').value) || 0;
+        changes.primeiroVencimento = document.getElementById('edit-venda-vencimento')?.value || null;
     }
 
     await editarVenda(id, changes);
@@ -1014,7 +1035,7 @@ async function executarAmpliarParcelas(vendaId, parcelaId, forma, valorPago, pen
             numero: maxNumero + i,
             valor: valorCada,
             valorPago: 0,
-            dataVencimento: venc.toISOString().split('T')[0],
+            dataVencimento: dateToLocalStr(venc),
             status: 'pendente'
         });
     }
@@ -1095,7 +1116,7 @@ async function executarAmpliarManual(vendaId, pendente) {
             numero: maxNumero + i,
             valor: valorCada,
             valorPago: 0,
-            dataVencimento: venc.toISOString().split('T')[0],
+            dataVencimento: dateToLocalStr(venc),
             status: 'pendente'
         });
     }
@@ -1223,9 +1244,14 @@ async function enviarComprovante(vendaId) {
 async function enviarComprovanteOriginal(vendaId) {
     const venda = await getVenda(vendaId);
     const cliente = await getCliente(venda.clienteId);
+    const parcelas = await getParcelasByVenda(vendaId);
+    parcelas.sort((a, b) => a.numero - b.numero);
 
     // Use original parcela count (before any extensions)
     const numOriginal = venda.numParcelasOriginal || venda.numParcelas;
+    const primeiraVencimento = parcelas.length > 0 ? parcelas[0].dataVencimento : null;
+    const chavePix = configVal('chavePixCelular');
+    const nomeNegocio = configVal('nomeNegocio');
 
     let texto = `🧾 *COMPROVANTE DE COMPRA*\n`;
     texto += `━━━━━━━━━━━━━━━━━━\n`;
@@ -1241,10 +1267,16 @@ async function enviarComprovanteOriginal(vendaId) {
         texto += `*Condição:* ${numOriginal}x ${formatMoney(valorParcela)}`;
         if (venda.taxaJuros > 0) texto += ` (${venda.taxaJuros}% a.m.)`;
         texto += `\n`;
+        if (primeiraVencimento) {
+            texto += `*Vencimento:* ${formatDate(primeiraVencimento)}\n`;
+        }
     } else {
         texto += `*Condição:* À vista\n`;
     }
-    texto += `\nObrigado pela preferência! 🙏`;
+    if (chavePix) {
+        texto += `*Chave Pix Celular:* ${chavePix}\n`;
+    }
+    texto += `\n\n_${nomeNegocio}_`;
 
     await enviarTextoWhatsApp(cliente, texto);
     closeModal();
@@ -1260,6 +1292,9 @@ async function enviarComprovanteAtual(vendaId) {
 
     const totalPago = parcelas.filter(p => p.status === 'pago').reduce((s, p) => s + (p.valorPago || p.valor), 0) + (venda.valorEntrada || 0);
     const pendente = venda.valorTotal - totalPago;
+    const primeiraAberta = parcelas.find(p => p.status !== 'pago');
+    const chavePix = configVal('chavePixCelular');
+    const nomeNegocio = configVal('nomeNegocio');
 
     let texto = `🧾 *EXTRATO DA COMPRA*\n`;
     texto += `━━━━━━━━━━━━━━━━━━\n`;
@@ -1269,8 +1304,14 @@ async function enviarComprovanteAtual(vendaId) {
     texto += `*Já Pago:* ${formatMoney(totalPago)}\n`;
     if (pendente > 0.01) {
         texto += `*Pendente:* ${formatMoney(pendente)}\n`;
+        if (primeiraAberta) {
+            texto += `*Vencimento:* ${formatDate(primeiraAberta.dataVencimento)}\n`;
+        }
     } else {
         texto += `✅ *QUITADO!*\n`;
+    }
+    if (chavePix) {
+        texto += `*Chave Pix Celular:* ${chavePix}\n`;
     }
     texto += `\n📅 *PARCELAS:*\n`;
     for (const p of parcelas) {
@@ -1282,7 +1323,7 @@ async function enviarComprovanteAtual(vendaId) {
         }
         texto += `\n`;
     }
-    texto += `\nObrigado pela preferência! 🙏`;
+    texto += `\n\n_${nomeNegocio}_`;
 
     await enviarTextoWhatsApp(cliente, texto);
     closeModal();

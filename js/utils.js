@@ -20,7 +20,21 @@ function formatDate(dateStr) {
 
 // Get today as YYYY-MM-DD
 function getToday() {
-    return new Date().toISOString().split('T')[0];
+    return dateToLocalStr(new Date());
+}
+
+function proximoMes() {
+    const d = new Date();
+    d.setMonth(d.getMonth() + 1);
+    return dateToLocalStr(d);
+}
+
+// Convert Date to YYYY-MM-DD using local timezone (avoids UTC shift)
+function dateToLocalStr(d) {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
 }
 
 // Days difference
@@ -32,7 +46,7 @@ function daysDiff(dateStr) {
 }
 
 // Calculate parcelas
-function calcularParcelas(valorTotal, numParcelas, taxaJuros, dataInicio, valorEntrada = 0) {
+function calcularParcelas(valorTotal, numParcelas, taxaJuros, dataInicio, valorEntrada = 0, primeiroVencimento = null) {
     const parcelas = [];
     const valorFinanciar = valorTotal - valorEntrada;
 
@@ -49,16 +63,24 @@ function calcularParcelas(valorTotal, numParcelas, taxaJuros, dataInicio, valorE
 
     valorParcela = Math.round(valorParcela * 100) / 100;
 
-    const inicio = new Date(dataInicio + 'T00:00:00');
+    // If primeiroVencimento provided: parcela 1 = that date, next = +1 month each
+    // If not: parcela 1 = dataInicio + 1 month (legacy behavior)
+    const useCustomDate = !!primeiroVencimento;
+    const base = new Date((useCustomDate ? primeiroVencimento : dataInicio) + 'T00:00:00');
 
     for (let i = 0; i < numParcelas; i++) {
-        const vencimento = new Date(inicio);
-        vencimento.setMonth(vencimento.getMonth() + (i + 1));
+        const vencimento = new Date(base);
+        vencimento.setMonth(vencimento.getMonth() + (useCustomDate ? i : i + 1));
+
+        // Use local date (not UTC) to avoid timezone shift
+        const yyyy = vencimento.getFullYear();
+        const mm = String(vencimento.getMonth() + 1).padStart(2, '0');
+        const dd = String(vencimento.getDate()).padStart(2, '0');
 
         parcelas.push({
             numero: i + 1,
             valor: valorParcela,
-            dataVencimento: vencimento.toISOString().split('T')[0],
+            dataVencimento: `${yyyy}-${mm}-${dd}`,
             status: 'pendente'
         });
     }

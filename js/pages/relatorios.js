@@ -219,8 +219,8 @@ async function atualizarRelatorios() {
 
 // Calculate month data
 async function calcularDadosMes(mes, ano) {
-    const inicioMes = new Date(ano, mes, 1).toISOString().split('T')[0];
-    const fimMes = new Date(ano, mes + 1, 0).toISOString().split('T')[0];
+    const inicioMes = dateToLocalStr(new Date(ano, mes, 1));
+    const fimMes = dateToLocalStr(new Date(ano, mes + 1, 0));
 
     // Pagamentos do mês
     const todosPagamentos = await db.pagamentos.toArray();
@@ -271,7 +271,7 @@ async function calcularDadosSemana() {
     for (let i = 6; i >= 0; i--) {
         const dia = new Date(hoje);
         dia.setDate(dia.getDate() - i);
-        const diaStr = dia.toISOString().split('T')[0];
+        const diaStr = dateToLocalStr(dia);
         const pagDia = todosPagamentos.filter(p => p.data.split('T')[0] === diaStr);
         porDia.push({
             dia: diasSemana[dia.getDay()],
@@ -322,8 +322,8 @@ async function calcularDividas() {
 
 // Top products
 async function calcularTopProdutos(mes, ano) {
-    const inicioMes = new Date(ano, mes, 1).toISOString().split('T')[0];
-    const fimMes = new Date(ano, mes + 1, 0).toISOString().split('T')[0];
+    const inicioMes = dateToLocalStr(new Date(ano, mes, 1));
+    const fimMes = dateToLocalStr(new Date(ano, mes + 1, 0));
 
     const todasVendas = await db.vendas.toArray();
     const vendasMes = todasVendas.filter(v => v.data >= inicioMes && v.data <= fimMes && v.status !== 'cancelada');

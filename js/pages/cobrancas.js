@@ -604,7 +604,7 @@ async function executarAmpliarParcelasCobranca(vendaId, parcelaId, forma, valorP
             numero: maxNumero + i,
             valor: valorCada,
             valorPago: 0,
-            dataVencimento: venc.toISOString().split('T')[0],
+            dataVencimento: dateToLocalStr(venc),
             status: 'pendente'
         });
     }

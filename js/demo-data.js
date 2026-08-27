@@ -17,9 +17,12 @@ async function carregarDadosDemo() {
     const em15dias = new Date(); em15dias.setDate(em15dias.getDate()+15);
     const em30dias = new Date(); em30dias.setDate(em30dias.getDate()+30);
 
+    // Helper for safe date strings
+    const ds = (d) => dateToLocalStr(d);
+
     // Config
     saveConfig({
-        nomeNegocio: 'Alencar Vendas',
+        nomeNegocio: 'Alencar Enxovais',
         dddPadrao: '49',
         jurosPadrao: 5,
         parcelasPadrao: 4,
@@ -65,8 +68,8 @@ async function carregarDadosDemo() {
 
     // Venda 2: João - Liquidificador 3x SIN juros (parcela 1 ATRASADA 7 dias)
     const p2 = calcularParcelas(200, 3, 0, hoje, 0);
-    p2[0].dataVencimento = ha7dias.toISOString().split('T')[0];
-    await addVenda({clienteId:2, data:ha12dias.toISOString().split('T')[0], descricao:'Liquidificador Mondial', itens:[{produtoId:2, quantidade:1}], valorTotal:200, tipo:'parcelado', numParcelas:3, taxaJuros:0, valorEntrada:0}, p2);
+    p2[0].dataVencimento = ds(ha7dias);
+    await addVenda({clienteId:2, data:ds(ha12dias), descricao:'Liquidificador Mondial', itens:[{produtoId:2, quantidade:1}], valorTotal:200, tipo:'parcelado', numParcelas:3, taxaJuros:0, valorEntrada:0}, p2);
 
     // Venda 3: Fernanda - Jogo de Cama 2x (parcela 1 vence hoy)
     const p3 = calcularParcelas(160, 2, 0, hoje, 0);
@@ -75,8 +78,8 @@ async function carregarDadosDemo() {
 
     // Venda 4: Carlos - Ventilador 4x (parcela 1 ATRASADA 12 dias)
     const p4 = calcularParcelas(220, 4, 0, hoje, 0);
-    p4[0].dataVencimento = ha12dias.toISOString().split('T')[0];
-    await addVenda({clienteId:4, data:ha12dias.toISOString().split('T')[0], descricao:'Ventilador Arno 40cm', itens:[{produtoId:4, quantidade:1}], valorTotal:220, tipo:'parcelado', numParcelas:4, taxaJuros:0, valorEntrada:0}, p4);
+    p4[0].dataVencimento = ds(ha12dias);
+    await addVenda({clienteId:4, data:ds(ha12dias), descricao:'Ventilador Arno 40cm', itens:[{produtoId:4, quantidade:1}], valorTotal:220, tipo:'parcelado', numParcelas:4, taxaJuros:0, valorEntrada:0}, p4);
 
     // Venda 5: Ana Paula - Ferro à vista (QUITADA - paga hoy)
     const pv = [{numero:1, valor:110, dataVencimento:hoje, status:'pago', dataPagamento:hoje, formaPagamento:'pix'}];
@@ -84,13 +87,13 @@ async function carregarDadosDemo() {
 
     // Venda 6: Ana Paula - Air Fryer 5x con ENTRADA R$100 (parcela 1 vence en 7 dias)
     const p6 = calcularParcelas(400, 5, 0, hoje, 100);
-    p6[0].dataVencimento = em7dias.toISOString().split('T')[0];
+    p6[0].dataVencimento = ds(em7dias);
     await addVenda({clienteId:5, data:hoje, descricao:'Air Fryer Mondial 4L', itens:[{produtoId:8, quantidade:1}], valorTotal:400, tipo:'parcelado', numParcelas:5, taxaJuros:0, valorEntrada:100}, p6);
 
     // Venda 7: Maria (segunda compra) - Toalhas 3x con PAGO PARCIAL en parcela 1
-    const p7 = calcularParcelas(100, 3, 0, ha7dias.toISOString().split('T')[0], 0);
-    p7[0].dataVencimento = ha3dias.toISOString().split('T')[0]; // atrasada 3 dias
-    await addVenda({clienteId:1, data:ha7dias.toISOString().split('T')[0], descricao:'Jogo de Toalhas Banho', itens:[{produtoId:6, quantidade:1}], valorTotal:100, tipo:'parcelado', numParcelas:3, taxaJuros:0, valorEntrada:0}, p7);
+    const p7 = calcularParcelas(100, 3, 0, ds(ha7dias), 0);
+    p7[0].dataVencimento = ds(ha3dias); // atrasada 3 dias
+    await addVenda({clienteId:1, data:ds(ha7dias), descricao:'Jogo de Toalhas Banho', itens:[{produtoId:6, quantidade:1}], valorTotal:100, tipo:'parcelado', numParcelas:3, taxaJuros:0, valorEntrada:0}, p7);
     // Mark parcela 1 as partial payment (paid 20 of 33.33)
     const parcV7 = await db.parcelas.where('vendaId').equals(7).toArray();
     if (parcV7.length > 0) {
@@ -99,9 +102,9 @@ async function carregarDadosDemo() {
     }
 
     // Venda 8: Roberto (CLIENTE INATIVO) - Panela de Pressão 4x pendiente
-    const p8 = calcularParcelas(170, 4, 0, ha7dias.toISOString().split('T')[0], 0);
-    p8[0].dataVencimento = ha3dias.toISOString().split('T')[0]; // atrasada
-    await addVenda({clienteId:6, data:ha7dias.toISOString().split('T')[0], descricao:'Panela de Pressão 7L', itens:[{produtoId:7, quantidade:1}], valorTotal:170, tipo:'parcelado', numParcelas:4, taxaJuros:0, valorEntrada:0}, p8);
+    const p8 = calcularParcelas(170, 4, 0, ds(ha7dias), 0);
+    p8[0].dataVencimento = ds(ha3dias); // atrasada
+    await addVenda({clienteId:6, data:ds(ha7dias), descricao:'Panela de Pressão 7L', itens:[{produtoId:7, quantidade:1}], valorTotal:170, tipo:'parcelado', numParcelas:4, taxaJuros:0, valorEntrada:0}, p8);
 
     // === VENDAS HISTÓRICAS (julio - para relatórios comparativo) ===
     const julho = '2026-07';

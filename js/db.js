@@ -191,7 +191,8 @@ async function editarVenda(vendaId, changes) {
                     numParcelasRestantes,
                     updatedVenda.taxaJuros || 0,
                     getToday(),
-                    0 // entrada already accounted for
+                    0, // entrada already accounted for
+                    changes.primeiroVencimento || null
                 );
 
                 for (let i = 0; i < novasParcelas.length; i++) {
@@ -238,13 +239,13 @@ async function getParcelasPendentes() {
 }
 
 async function getParcelasHoje() {
-    const hoje = new Date().toISOString().split('T')[0];
+    const hoje = dateToLocalStr(new Date());
     const pendentes = await getParcelasPendentes();
     return pendentes.filter(p => p.dataVencimento <= hoje);
 }
 
 async function getParcelasAtrasadas() {
-    const hoje = new Date().toISOString().split('T')[0];
+    const hoje = dateToLocalStr(new Date());
     const pendentes = await db.parcelas.where('status').equals('pendente').toArray();
     return pendentes.filter(p => p.dataVencimento < hoje);
 }
@@ -253,8 +254,8 @@ async function getParcelasFuturas(dias = 7) {
     const hoje = new Date();
     const limite = new Date(hoje);
     limite.setDate(limite.getDate() + dias);
-    const hojeStr = hoje.toISOString().split('T')[0];
-    const limiteStr = limite.toISOString().split('T')[0];
+    const hojeStr = dateToLocalStr(hoje);
+    const limiteStr = dateToLocalStr(limite);
 
     const pendentes = await db.parcelas.where('status').equals('pendente').toArray();
     return pendentes.filter(p => p.dataVencimento >= hojeStr && p.dataVencimento <= limiteStr);
@@ -273,7 +274,7 @@ async function marcarParcelaPaga(parcelaId, formaPagamento, valorRecebido = null
     await db.parcelas.update(parcelaId, {
         status: 'pago',
         valorPago: jaPago + valorEfetivo,
-        dataPagamento: new Date().toISOString().split('T')[0],
+        dataPagamento: dateToLocalStr(new Date()),
         formaPagamento: formaPagamento
     });
 
@@ -311,7 +312,7 @@ async function marcarParcelaPaga(parcelaId, formaPagamento, valorRecebido = null
 // ============ STATS ============
 
 async function getStats() {
-    const hoje = new Date().toISOString().split('T')[0];
+    const hoje = dateToLocalStr(new Date());
 
     const todasParcelas = await db.parcelas.toArray();
     const pendentes = todasParcelas.filter(p => p.status === 'pendente' || p.status === 'atrasado');
@@ -377,7 +378,10 @@ async function editarDataParcela(parcelaId, novaData, cascata = false) {
         if (p.numero >= parcela.numero && p.status !== 'pago') {
             const dataAtual = new Date(p.dataVencimento + 'T00:00:00');
             dataAtual.setDate(dataAtual.getDate() + diffDias);
-            await db.parcelas.update(p.id, { dataVencimento: dataAtual.toISOString().split('T')[0] });
+            const yyyy = dataAtual.getFullYear();
+            const mm = String(dataAtual.getMonth() + 1).padStart(2, '0');
+            const dd = String(dataAtual.getDate()).padStart(2, '0');
+            await db.parcelas.update(p.id, { dataVencimento: `${yyyy}-${mm}-${dd}` });
         }
     }
 }
