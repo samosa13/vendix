@@ -177,6 +177,17 @@ function openWhatsApp(phone, message = '') {
 }
 
 
+// Expand all collapse sections on the current page
+function expandirTodosCollapses() {
+    document.querySelectorAll('.collapse-content.hidden').forEach(el => {
+        el.classList.remove('hidden');
+        const toggle = el.previousElementSibling;
+        if (toggle && toggle.classList.contains('collapse-toggle')) {
+            toggle.classList.add('open');
+        }
+    });
+}
+
 // Toggle collapsible section
 function toggleCollapse(id) {
     const content = document.getElementById(id);
