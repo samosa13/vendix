@@ -268,7 +268,7 @@ async function abrirFormVenda() {
                     </select>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Juros % / mês</label>
+                    <label class="form-label">Juros %</label>
                     <input type="number" step="0.1" class="form-input" id="venda-juros" value="${configVal('jurosPadrao')}" placeholder="0" onchange="calcularPreview()">
                 </div>
             </div>
@@ -487,7 +487,7 @@ function calcularPreview() {
         <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 8px;">
             ${entrada > 0 ? `Entrada: <strong>${formatMoney(entrada)}</strong> + ` : ''}
             <strong>${numParcelas}x ${formatMoney(parcelas[0]?.valor || 0)}</strong>
-            ${juros > 0 ? ` (${juros}% a.m.)` : ''}
+            ${juros > 0 ? ` (${juros}% juros)` : ''}
         </div>
         <div style="font-size: 11px; color: var(--text-muted);">
             Total: ${formatMoney(totalPagar)}
@@ -631,13 +631,18 @@ async function abrirDetalheVenda(id) {
             <div style="margin-top: 8px; font-size: 22px; font-weight: 800; color: var(--accent);">
                 ${formatMoney(venda.valorTotal)}
             </div>
+            ${venda.taxaJuros > 0 ? `
+                <div style="margin-top: 4px; font-size: 13px; color: var(--text-secondary);">
+                    Total com juros: ${formatMoney(parcelas.reduce((s,p) => s + p.valor, 0) + (venda.valorEntrada || 0))} (${venda.taxaJuros}%)
+                </div>
+            ` : ''}
             ${venda.valorEntrada > 0 ? `
                 <div style="margin-top: 4px; font-size: 13px; color: var(--text-secondary);">
                     Entrada: ${formatMoney(venda.valorEntrada)} (já pago)
                 </div>
             ` : ''}
             <div style="margin-top: 4px; font-size: 14px; font-weight: 700; color: var(--warning);">
-                Pendente: ${formatMoney(venda.valorTotal - (venda.valorEntrada || 0) - parcelas.filter(p => p.status === 'pago').reduce((s,p) => s + (p.valorPago || p.valor), 0))}
+                Pendente: ${formatMoney(parcelas.filter(p => p.status !== 'pago').reduce((s,p) => s + p.valor - (p.valorPago || 0), 0))}
             </div>
         </div>
 
@@ -779,7 +784,7 @@ async function abrirEditarVenda(id) {
                     </div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Juros % / mês</label>
+                    <label class="form-label">Juros %</label>
                     <input type="number" step="0.1" class="form-input" id="edit-venda-juros" value="${venda.taxaJuros || 0}">
                 </div>
             </div>
@@ -1263,10 +1268,15 @@ async function enviarComprovanteOriginal(vendaId) {
         texto += `*Entrada:* ${formatMoney(venda.valorEntrada)}\n`;
     }
     if (venda.tipo === 'parcelado') {
-        const valorParcela = (venda.valorTotal - (venda.valorEntrada || 0)) / numOriginal;
+        const valorFinanciar = venda.valorTotal - (venda.valorEntrada || 0);
+        const valorComJuros = venda.taxaJuros > 0 ? valorFinanciar * (1 + venda.taxaJuros / 100) : valorFinanciar;
+        const valorParcela = Math.round((valorComJuros / numOriginal) * 100) / 100;
         texto += `*Condição:* ${numOriginal}x ${formatMoney(valorParcela)}`;
-        if (venda.taxaJuros > 0) texto += ` (${venda.taxaJuros}% a.m.)`;
+        if (venda.taxaJuros > 0) texto += ` (${venda.taxaJuros}% juros)`;
         texto += `\n`;
+        if (venda.taxaJuros > 0) {
+            texto += `*Total a Pagar:* ${formatMoney(valorComJuros + (venda.valorEntrada || 0))}\n`;
+        }
         if (primeiraVencimento) {
             texto += `*Vencimento:* ${formatDate(primeiraVencimento)}\n`;
         }

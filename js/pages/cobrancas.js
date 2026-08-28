@@ -4,6 +4,8 @@
 
 async function renderCobrancas() {
     const hoje = getToday();
+    // Remember active tab for restore after payment
+    const savedTab = window._cobActiveTab || 'hoje';
 
     // Get all pending parcelas
     const pendentes = await getParcelasPendentes();
@@ -63,8 +65,12 @@ async function renderCobrancas() {
         <div id="cobrancas-content"></div>
     `;
 
-    // Render default tab (with filter if set)
-    await renderTabCobrancaFiltered('hoje');
+    // Render saved tab (or default 'hoje')
+    await switchTabCobranca(savedTab);
+    // Restore client filter if set
+    if (window._cobFilterClienteId > 0) {
+        await filtrarCobrancasPorCliente(window._cobFilterClienteId);
+    }
 }
 
 // Global filter state
@@ -134,6 +140,7 @@ async function renderTabCobrancaFiltered(tab) {
 }
 
 async function switchTabCobranca(tab) {
+    window._cobActiveTab = tab;
     document.querySelectorAll('.tabs .tab-btn').forEach(b => b.classList.remove('active'));
     document.getElementById('tab-' + tab).classList.add('active');
     await renderTabCobrancaFiltered(tab);

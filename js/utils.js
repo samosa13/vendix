@@ -54,9 +54,9 @@ function calcularParcelas(valorTotal, numParcelas, taxaJuros, dataInicio, valorE
 
     let valorParcela;
     if (taxaJuros > 0) {
-        // Price table (PMT formula - standard Brazilian installment calculation)
-        const taxa = taxaJuros / 100;
-        valorParcela = valorFinanciar * (taxa * Math.pow(1 + taxa, numParcelas)) / (Math.pow(1 + taxa, numParcelas) - 1);
+        // Juros simples: valor + X% sobre o total, dividido entre parcelas
+        const valorComJuros = valorFinanciar * (1 + taxaJuros / 100);
+        valorParcela = valorComJuros / numParcelas;
     } else {
         valorParcela = valorFinanciar / numParcelas;
     }
