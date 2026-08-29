@@ -102,6 +102,19 @@ async function addVenda(venda, parcelas) {
         }
     }
 
+    // Register entrada as a pagamento (so it counts in Recebido)
+    if (venda.valorEntrada && venda.valorEntrada > 0) {
+        await db.pagamentos.add({
+            parcelaId: null,
+            vendaId: vendaId,
+            clienteId: venda.clienteId,
+            valor: venda.valorEntrada,
+            data: new Date().toISOString(),
+            forma: 'dinheiro',
+            tipo: 'entrada'
+        });
+    }
+
     // Check if all paid (e.g. venda à vista)
     const allPaid = parcelas.every(p => p.status === 'pago');
     if (allPaid) {
